@@ -31,7 +31,7 @@ The skill follows a structured 9-step workflow:
 3. **Document Type Detection**: Score PDFs (1-5 scale) across 7 categories (Word, PowerPoint, Agenda, Roster, News, Survey, Other)
 4. **Meeting Overview Creation**: Extract from HTML or agenda PDF
 5. **Minutes Reference**: Locate actual participant statements if available
-6. **Selective Material Reading**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`
+6. **Selective Material Reading**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`, convert to Markdown with docling for token optimization (when applicable)
 7. **Type-Specific Reading**: Apply token-optimized strategies based on document type and page count
 8. **Summary Generation**: Create structured abstract (1,000 chars, 5-element structure) + detailed report
 9. **File Output**: Write to `{meeting_name}/{meeting_name}_{date}_{round}_summary.txt` and `*_detail.md`
@@ -39,6 +39,7 @@ The skill follows a structured 9-step workflow:
 ### Key Design Principles
 
 **Token Optimization**:
+- Convert PDFs to Markdown with docling container when beneficial (>50 pages, complex layouts)
 - Dynamic reading strategies based on page count (≤5: full text, ≤20: ToC + key sections, ≤50: ToC + summary + conclusion, >50: metadata + ToC + summary only)
 - Use Read tool's limit/offset parameters for large documents
 - Extract only essential content (titles, section headers) before detailed reading
@@ -110,8 +111,141 @@ cat "output/{meeting_name}_{date}_{round}_summary.txt"
 
 ### PDF Processing Rules
 
-- **Remote PDFs**: Download with curl to `/tmp/` first, then read with Read tool
+**PDF Acquisition:**
+- **Remote PDFs**: Download with curl to `/tmp/` first (sequential downloads only)
 - **Local PDFs**: Read directly with Read tool
+
+**PDF→Markdown Conversion with docling (Token Optimization):**
+
+Prefer docling container for converting PDFs to Markdown before processing to reduce token consumption:
+
+```bash
+# Start docling-serve container (one-time setup)
+docker run -d -p 5001:5001 --name docling-server quay.io/docling-project/docling-serve
+```
+
+**Synchronous Conversion (Small PDFs only):**
+
+**IMPORTANT**: Synchronous processing has a 120-second timeout limit (DOCLING_SERVE_MAX_SYNC_WAIT). Only use for small PDFs (<10 pages estimated). For medium to large PDFs, use asynchronous processing.
+
+```bash
+# Convert PDF to Markdown (synchronous - times out for large PDFs)
+curl -s -X POST http://localhost:5001/v1/convert/file \
+  -F "files=@/tmp/document.pdf" \
+  > /tmp/document_result.json
+
+# Extract Markdown from JSON response (synchronous response structure)
+cat /tmp/document_result.json | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['md_content'])" \
+  > /tmp/document.md
+```
+
+**Asynchronous Conversion (Recommended for >10 pages):**
+
+For medium to large PDFs, use asynchronous processing to avoid timeout:
+
+```bash
+# 1. Submit conversion task
+TASK_ID=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
+  -F "files=@/tmp/document.pdf" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+
+# 2. Poll for completion (check every 10-30 seconds)
+while true; do
+  STATUS=$(curl -s "http://localhost:5001/v1/status/poll/$TASK_ID" | \
+    python3 -c "import json, sys; print(json.load(sys.stdin)['task_status'])")
+  echo "Status: $STATUS"
+  if [ "$STATUS" = "success" ]; then
+    break
+  fi
+  sleep 15
+done
+
+# 3. Retrieve result (asynchronous response structure)
+curl -s "http://localhost:5001/v1/result/$TASK_ID" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
+  > /tmp/document.md
+```
+
+**Processing Multiple PDFs Efficiently:**
+
+Submit multiple conversions in parallel for efficiency:
+
+```bash
+# Submit all PDFs asynchronously
+TASK_ID_1=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "files=@/tmp/doc1.pdf" | python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+TASK_ID_2=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "files=@/tmp/doc2.pdf" | python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+TASK_ID_3=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "files=@/tmp/doc3.pdf" | python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+
+# Poll and retrieve results for each task
+# (Repeat polling pattern above for each TASK_ID)
+```
+
+**After Conversion:**
+
+```bash
+# Read the Markdown with Read tool
+# If Markdown file is too large (>256KB due to embedded images), use Grep to extract structure:
+grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
+```
+
+**Usage Decision Criteria:**
+
+*Use docling (asynchronous) when:*
+- Medium to large PDFs (>10 pages estimated)
+- Complex tables/layouts that benefit from structured Markdown
+- Scanned PDFs requiring OCR
+- Multiple PDFs to process (submit in parallel for efficiency)
+
+*Use docling (synchronous) when:*
+- Small PDFs (<10 pages estimated)
+- Quick conversions where 120-second timeout is sufficient
+- Note: If synchronous times out, automatically retry with asynchronous
+
+*Use Read tool directly when:*
+- Very small PDFs (≤5 pages) where conversion overhead isn't worth it
+- Simple text-based documents
+- Docker unavailable in environment
+- Need to read specific pages/sections only
+
+**Processing Time Guidelines:**
+- Small PDFs (<10 pages): 1-2 minutes (synchronous or asynchronous)
+- Medium PDFs (10-30 pages): 3-5 minutes (asynchronous recommended)
+- Large PDFs (30-50 pages): 5-8 minutes (asynchronous required)
+- Multiple PDFs in parallel: Time of longest PDF + 1-2 minutes overhead
+
+**Error Handling:**
+
+1. **Docling container not running:**
+   - Check with: `docker ps | grep docling`
+   - Start if needed: `docker start docling-server` (or run the initial docker run command)
+
+2. **Synchronous conversion timeout ("Conversion is taking too long"):**
+   - Automatically retry with asynchronous conversion
+   - This is expected for PDFs >10 pages
+
+3. **JSON response structure differences:**
+   - Synchronous: `data['md_content']` (top-level key)
+   - Asynchronous: `data['document']['md_content']` (nested key)
+   - Always check for both structures when parsing
+
+4. **Markdown file too large (>256KB) for Read tool:**
+   - Use Grep to extract headings: `grep "^#{1,3}\s+" file.md`
+   - Understand document structure from headings
+   - Read only necessary sections using Read tool with offset/limit
+   - Large file size often due to base64-encoded images in Markdown
+
+5. **Conversion fails entirely:**
+   - Fall back to Read tool for direct PDF reading
+   - Log conversion errors for debugging
+   - Note in output that Markdown conversion was not available
+
+6. **Task status stuck in "pending" or "started":**
+   - Continue polling for up to 10 minutes
+   - If still stuck, check docling container logs: `docker logs docling-server`
+   - Consider restarting container if necessary
+
+**Other Rules:**
 - **Empty content detection**: Skip if only cover page, images without captions, or data tables without context
 - **Parallel downloads**: Avoid; use sequential downloads to prevent rate limiting
 

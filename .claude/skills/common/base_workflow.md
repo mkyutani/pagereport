@@ -1,5 +1,8 @@
----
-description: 政府会議ページのサマリー作成（HTML+PDF対応、トークン最適化）
+# 政府会議ページサマリー作成 - 共通ワークフロー
+
+このドキュメントは、政府会議ページのサマリー作成スキルで使用される共通の処理フローを定義しています。
+各府省庁スキル（pagereport-cas, pagereport-cao, pagereport-meti）はこのワークフローを参照します。
+
 ---
 
 # 引数
@@ -110,6 +113,14 @@ HTMLから全PDFリンクを抽出し、相対パスを絶対URLに変換。
 2. ✓ 参考資料と通常資料が両方ある場合、参考資料は最大4点まで
 3. ✓ 概要と全文が両方ある場合 → 概要優先、全文スコアを1段階下げる
 4. ✓ **除外対象**: 委員名簿、座席表、公開方法
+5. ✓ **個人名・団体名の資料**（取組資料）の扱い:
+   - 「○○委員」「○○教授」など個人名が含まれる資料
+   - 企業名、社団法人名、財団法人名などが含まれる資料
+   - これらは各委員・団体が提出した取組資料と推測される
+   - **原則**: 事務局資料（Executive Summary、とりまとめ、概要、戦略等）がある場合、
+     個人名・団体名の資料は読む対象にしない（スコア1-2程度の低優先度）
+   - **例外**: 事務局資料がなく、議事次第・委員名簿以外に個人名・団体名の資料しかない場合、
+     これらを読んで簡潔にまとめる
 
 **ファイル名パターン認識**:
 - **高優先度**: `shiryou1.pdf`, `shiryou2.pdf`（番号が若い）、`honpen.pdf`、`gaiyou.pdf`
@@ -122,6 +133,56 @@ HTMLから全PDFリンクを抽出し、相対パスを絶対URLに変換。
 
 ### 6-3. 上位資料のみ選択
 スコア上位の資料のみを選択（目安: 上位3-5個、または スコア4以上）
+
+### 6-3b. 重点資料の詳細な内容抽出
+
+**重点的に読むべき資料タイプ**:
+
+以下のような資料は会議の主要な議論内容が含まれているため、
+詳細に読み取り、**具体的な内容**をサマリーに反映すること：
+
+- Executive Summary / エグゼクティブサマリー
+- とりまとめ資料
+- 概要資料
+- 戦略資料 / ○○戦略
+- 方針資料 / 今後の方向性
+- 中間報告 / 最終報告
+
+**経産省等の事務局資料の典型的な構成要素**:
+
+議題と資料表題に基づいて、以下の要素のうち資料に含まれているものを
+抽出してサマリーに反映すること：
+
+1. **現状認識**
+   - 国内の状況（市場動向、産業動向、技術動向、課題）
+   - 海外の状況（諸外国の政策、国際競争環境、海外企業の動向）
+
+2. **あるべき姿・方向性**
+   - 目指すべき状態
+   - 政策の基本的な方向性
+   - 戦略的な考え方
+
+3. **ロードマップ**
+   - 時系列での取り組み
+   - マイルストーン
+   - 技術開発の見通し
+
+4. **予算の考え方**
+   - 支援の規模・スキーム・財源
+
+5. **論点**
+   - 検討すべき課題
+   - 政策オプション
+   - 今後の検討事項
+
+**記述の原則**:
+- 議題と資料表題に沿って、議論されたと想定される**具体的な内容**を記述
+- 「議論された」「検討された」のみの抽象的表現は避ける
+- 資料に含まれる上記の構成要素を具体的に抽出して記述する
+
+**記述例**:
+- ❌ 抽象的: 「戦略の方向性について議論された」
+- ✅ 具体的: 「現状認識として日本の製造装置シェア縮小（26%→16%）が指摘され、今後の方向性としてデジタル・エコシステムの実現が示され、予算として2030年度までに10兆円規模の支援が提示された」
 
 ### 6-4. PDFのダウンロード（重要）
 
@@ -141,6 +202,124 @@ curl -o /tmp/shiryou1-1.pdf "https://example.com/shiryou1-1.pdf"
 - ファイル名は元のファイル名を維持
 - ダウンロード失敗時はエラーをログして次へ進む
 - 並列ダウンロードは避ける（順次実行）
+
+### 6-5. docling containerでPDF→Markdown変換（トークン最適化）
+
+**重要**: PDFを直接Read toolで読むとトークンを大量に消費します。docling containerでMarkdownに変換してから読むことで、トークン消費を大幅に削減できます。
+
+#### docling-serve containerの準備
+
+```bash
+# CPU-only版のコンテナをpullして起動（初回のみ）
+docker pull quay.io/docling-project/docling-serve
+docker run -d -p 5001:5001 --name docling-server quay.io/docling-project/docling-serve
+
+# コンテナの状態確認
+docker ps | grep docling
+```
+
+#### PDFからMarkdownへの変換
+
+**変換方法の選択:**
+
+- **同期処理**: 小規模PDF (<10ページ推定) のみ使用可能（120秒タイムアウト制限）
+- **非同期処理**: 中〜大規模PDF (>10ページ) で必須、複数PDF処理時に推奨
+
+**方法1: 非同期処理（推奨、複数PDF対応）**
+
+```bash
+# 1. 全PDFを非同期で投入（並行処理）
+TASK_ID_1=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
+  -F "files=@/tmp/shiryou1.pdf" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+
+TASK_ID_2=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
+  -F "files=@/tmp/shiryou2.pdf" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+
+# 2. 各タスクの完了を待機（ポーリング）
+for TASK_ID in $TASK_ID_1 $TASK_ID_2; do
+  while true; do
+    STATUS=$(curl -s "http://localhost:5001/v1/status/poll/$TASK_ID" | \
+      python3 -c "import json, sys; print(json.load(sys.stdin)['task_status'])")
+    if [ "$STATUS" = "success" ]; then
+      break
+    fi
+    sleep 15  # 15秒ごとにチェック
+  done
+done
+
+# 3. 結果を取得してMarkdownファイルに保存
+curl -s "http://localhost:5001/v1/result/$TASK_ID_1" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
+  > /tmp/shiryou1.md
+
+curl -s "http://localhost:5001/v1/result/$TASK_ID_2" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
+  > /tmp/shiryou2.md
+```
+
+**処理時間の目安:**
+- 小規模PDF (<10ページ): 1-2分
+- 中規模PDF (10-30ページ): 3-5分
+- 大規模PDF (30-50ページ): 5-8分
+- 複数PDF並行処理: 最長PDFの時間 + 1-2分
+
+**方法2: 同期処理（小規模PDFのみ）**
+
+```bash
+# 小規模PDFのみ使用可能（120秒タイムアウトあり）
+curl -s -X POST http://localhost:5001/v1/convert/file \
+  -F "files=@/tmp/small.pdf" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['md_content'])" \
+  > /tmp/small.md
+
+# タイムアウトエラー ("Conversion is taking too long") が発生した場合は、
+# 方法1の非同期処理に切り替える
+```
+
+#### Markdown読み取り
+
+変換後、Read toolでMarkdownファイルを読み取ります：
+
+```bash
+# 通常の読み取り
+Read /tmp/shiryou1.md
+
+# ファイルサイズが大きい場合（>256KB、base64画像含む）:
+# Grepで見出しを抽出して構造を把握
+grep "^#{1,3}\s+" /tmp/shiryou1.md
+
+# 構造把握後、必要なセクションのみ読む
+```
+
+#### docling vs Read toolの使い分け
+
+**docling containerを使うべき場合:**
+- ✓ 大きなPDF（50ページ超）でトークン削減効果が期待できる
+- ✓ 表やレイアウトが複雑な文書（構造化されたMarkdownで読みやすくなる）
+- ✓ OCRが必要なスキャンPDF
+
+**Read toolを直接使うべき場合:**
+- ✓ 小さなPDF（20ページ以下）- 変換オーバーヘッドが大きい
+- ✓ シンプルなテキスト主体の文書
+- ✓ dockerが利用できない環境
+
+**注意点:**
+- docling containerは初回起動時にAIモデルのダウンロードが発生（数分）
+- 変換処理には時間がかかる（大きなPDFで1-3分程度）
+- コンテナが起動していない場合は変換がエラーになる
+- 変換失敗時はRead toolで直接PDFを読むフォールバック処理を実装
+
+#### エラーハンドリング
+
+```bash
+# コンテナが起動しているか確認
+if ! docker ps | grep -q docling-server; then
+    echo "docling container not running, using Read tool instead"
+    # Read toolで直接PDFを読む処理へフォールバック
+fi
+```
 
 ## ステップ7: 文書タイプ別の効率的読み取り（トークン最適化）
 
@@ -249,6 +428,8 @@ curl -o /tmp/shiryou1-1.pdf "https://example.com/shiryou1-1.pdf"
    - 主要な議題
    - 各議題で議論された論点
    - 提出された資料の概要
+   - **重要**: 抽象的な「議論された」ではなく、資料に含まれる具体的な内容を記述
+     （現状認識、方向性、ロードマップ、予算、論点など）
 
 4. **【決定事項・合意内容】** (3-5文)
    - 具体的な決定事項
@@ -377,14 +558,6 @@ output/
 
 4. **日付・回数が取得できない場合**:
    - ユーザーに入力を求める
-
-# 実行例
-
-```
-/pagereport "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/kaigi/dai2/gijisidai.html"
-```
-
-会議名、開催日時、回数はHTMLから自動的に抽出されます。
 
 # 注意事項
 
