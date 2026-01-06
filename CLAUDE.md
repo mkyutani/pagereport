@@ -12,10 +12,18 @@ This is a Claude Code skills project for generating structured summaries of Japa
 
 ### Core Components
 
-**Skill Definition**: `.claude/commands/pagereport.md`
-- Contains the complete workflow specification for processing government meeting pages
-- Defines a 9-step processing pipeline from content fetching to file output
-- Includes detailed rules for PDF prioritization, document type detection, and token optimization
+**Skill Definitions**: `.claude/skills/`
+- `pagereport-cas/`: Internal Cabinet Office (内閣府) meeting pages
+- `pagereport-cao/`: Cabinet Office (総務省) meeting pages
+- `pagereport-meti/`: Ministry of Economy, Trade and Industry (経済産業省) meeting pages
+- `common/base_workflow.md`: Shared workflow specification used by all skills
+  - Defines an 11-step processing pipeline from content fetching to Bluesky posting
+  - Includes detailed rules for PDF prioritization, document type detection, and token optimization
+
+**Commands**: `.claude/commands/`
+- `bluesky-post.md`: Standalone command to extract abstract from report and post to Bluesky
+  - Can be invoked manually: `/bluesky-post <report_file_path>`
+  - Automatically called by skills in Step 11
 
 **Permissions**: `.claude/settings.local.json`
 - Pre-authorized tools: `WebFetch(domain:www.cas.go.jp)`, `Bash(curl:*)`, `Bash(mkdir:*)`, `Bash(ls:*)`
@@ -23,17 +31,19 @@ This is a Claude Code skills project for generating structured summaries of Japa
 
 ### Processing Pipeline
 
-The skill follows a structured 9-step workflow:
+The skill follows a structured 11-step workflow:
 
 1. **Content Acquisition**: Fetch HTML with WebFetch or read local/remote PDFs
 2. **Metadata Extraction**: Auto-extract meeting name, date (converted to YYYYMMDD), round number, location
-3. **Document Type Detection**: Score PDFs (1-5 scale) across 7 categories (Word, PowerPoint, Agenda, Roster, News, Survey, Other)
-4. **Meeting Overview Creation**: Extract from HTML or agenda PDF
-5. **Minutes Reference**: Locate actual participant statements if available
-6. **Selective Material Reading**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`, convert to Markdown with docling for token optimization (when applicable)
-7. **Type-Specific Reading**: Apply token-optimized strategies based on document type and page count
-8. **Summary Generation**: Create structured abstract (1,000 chars, 5-element structure) + detailed report
-9. **File Output**: Write to `{meeting_name}_{round}_{date}_report.md` with abstract enclosed in code fences
+3. **Meeting Overview Creation**: Extract from HTML or agenda PDF
+4. **Minutes Reference**: Locate actual participant statements if available
+5. **Material Selection and Download**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`
+6. **Document Type Detection**: Judge PDF type (Word/PowerPoint/Other) from first 5 pages
+7. **PDF to Markdown Conversion**: Convert with docling (PowerPoint) or pdftotext (Word) for token optimization
+8. **Type-Specific Reading**: Apply token-optimized strategies based on document type and page count
+9. **Summary Generation**: Create structured abstract (1,000 chars, 5-element structure) + detailed report
+10. **File Output**: Write to `{meeting_name}_{round}_{date}_report.md` with abstract enclosed in code fences
+11. **Bluesky Posting**: Automatically post the abstract to Bluesky using `ssky post` command
 
 ### Key Design Principles
 
@@ -70,7 +80,9 @@ The skill follows a structured 9-step workflow:
 
 ```bash
 # Invoke with URL (HTML page or PDF)
-/pagereport "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/kaigi/dai2/gijisidai.html"
+/pagereport-cas "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/kaigi/dai2/gijisidai.html"
+/pagereport-cao "https://www.cao.go.jp/..."
+/pagereport-meti "https://www.meti.go.jp/..."
 ```
 
 The skill automatically:
@@ -80,6 +92,21 @@ The skill automatically:
 - Creates `./output` directory if it doesn't exist
 - Downloads priority PDFs to `/tmp/` using curl
 - Generates unified report file in `./output/`
+- Posts the abstract to Bluesky using `ssky post` (if logged in)
+
+### Posting to Bluesky Manually
+
+If you want to post an existing report to Bluesky:
+
+```bash
+# Use the bluesky-post command
+/bluesky-post "output/日本成長戦略会議_第2回_20251224_report.md"
+```
+
+This is useful when:
+- You skipped Bluesky posting during initial generation (not logged in)
+- You want to re-post a report
+- You generated a report before Bluesky integration was added
 
 ### Manual Testing Commands
 
@@ -92,6 +119,15 @@ ls -la output/
 
 # Verify file creation
 cat "output/{meeting_name}_{round}_{date}_report.md"
+
+# Test Bluesky login status
+ssky profile
+
+# Test abstract extraction
+awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "output/{meeting_name}_{round}_{date}_report.md"
+
+# Test Bluesky posting (dry run)
+awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "output/{meeting_name}_{round}_{date}_report.md" | ssky post -d
 ```
 
 ## Important Implementation Notes
@@ -102,6 +138,7 @@ cat "output/{meeting_name}_{round}_{date}_report.md"
 2. **PDF download failure**: Log curl error, skip file, note "download failed" in detail.md
 3. **PDF read failure**: Log Read tool error, mark as "unreadable" in output
 4. **Missing metadata**: Prompt user for meeting name, date, or round number
+5. **Bluesky posting failure**: Log warning, skip posting, report generation continues normally
 
 ### Content Cleaning (HTML)
 
@@ -318,6 +355,30 @@ grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
 
 ## File Organization
 
+### Project Structure
+
+```
+.
+├── .claude/
+│   ├── commands/
+│   │   └── bluesky-post.md          # Bluesky posting command
+│   ├── skills/
+│   │   ├── pagereport-cas/          # Internal Cabinet Office skill
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-cao/          # Cabinet Office skill
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-meti/         # METI skill
+│   │   │   └── SKILL.md
+│   │   └── common/
+│   │       └── base_workflow.md     # Shared workflow (11 steps)
+│   └── settings.local.json          # Tool permissions
+├── output/
+│   └── {meeting_name}_{round}_{date}_report.md
+└── CLAUDE.md                        # This file
+```
+
+### Output Files
+
 ```
 output/
 └── {meeting_name}_第{N}回_{YYYYMMDD}_report.md
@@ -331,21 +392,37 @@ output/
 
 **Report File Structure:**
 - Header with meeting metadata (name, date, location)
-- **Abstract section** (enclosed in code fences for easy extraction)
+- **Abstract section** (enclosed in code fences for easy extraction by `/bluesky-post`)
 - Material list
 - Detailed information sections
 - Summary and reference links
 
 ## Modification Guidelines
 
-When editing the skill definition (`.claude/commands/pagereport.md`):
+### When Editing Workflow (`.claude/skills/common/base_workflow.md`)
 
-- Maintain the 9-step structure for clarity
+- Maintain the 11-step structure for clarity
 - Update token optimization strategies if processing different document types
 - Adjust PDF scoring criteria based on observed relevance patterns
 - Keep abstract structure strict (5 elements, 1 paragraph, 1,000 chars)
 - Test with actual government meeting pages to validate changes
 - Ensure all PDF URLs are converted to absolute paths
+
+### When Editing Commands (`.claude/commands/`)
+
+- Keep commands focused on a single responsibility
+- Document all parameters and error conditions
+- Provide usage examples
+- Include comprehensive error handling
+- Test commands independently before integration
+
+### When Adding New Skills
+
+- Create new skill file in `.claude/skills/<skill-name>/SKILL.md`
+- Reference the common workflow: `../common/base_workflow.md`
+- Add domain-specific customizations as needed
+- Update `.claude/settings.local.json` for domain permissions
+- Document in CLAUDE.md
 
 ## GitHub Workflow Rules
 
@@ -463,3 +540,87 @@ When working with Claude Code:
 - When asked to commit changes, Claude will generate properly formatted commit messages
 - Claude will NOT add "Generated with Claude Code" or "Co-Authored-By" footers
 - Review Claude's proposed changes before approving commits/PRs
+
+## Bluesky Integration
+
+### Overview
+
+The pagereport skills automatically post generated abstracts to Bluesky after completing the report. This enables real-time sharing of government meeting summaries with a wider audience.
+
+A standalone `/bluesky-post` command is also available for manually posting existing reports.
+
+### Setup
+
+**Prerequisites:**
+- Install ssky: `pip install ssky`
+- Login to Bluesky: `ssky login`
+- Enter your Bluesky handle and app password when prompted
+
+**Verification:**
+```bash
+# Check if ssky is installed
+which ssky
+
+# Verify login status
+ssky profile
+
+# Should display your profile information
+```
+
+### How It Works
+
+**Automatic Posting (Step 11 in pagereport workflow):**
+1. After generating report.md, automatically invokes the bluesky-post command
+2. Extracts the abstract from the generated report file
+3. Posts the abstract (including URL) to Bluesky using `ssky post`
+4. Handles long content by automatic thread splitting
+5. Gracefully skips if not logged in or if posting fails
+
+**Manual Posting (`/bluesky-post` command):**
+- Defined in `.claude/commands/bluesky-post.md`
+- Can be invoked independently: `/bluesky-post <report_file_path>`
+- Useful for posting existing reports or re-posting
+
+**What gets posted:**
+- The complete abstract (論文形式, 1,000 characters)
+- Original meeting page URL
+- Automatically split into thread if exceeds Bluesky's character limit
+
+### Error Handling
+
+The Bluesky posting step is **non-critical** and will not block report generation:
+
+1. **ssky not installed**: Warning message, posting skipped
+2. **Not logged in**: Warning message with login instructions, posting skipped
+3. **Posting fails**: Warning message, report saved successfully
+
+In all cases, the report file is generated successfully in `./output/` regardless of posting status.
+
+### Manual Posting
+
+If automatic posting is skipped, you can use the `/bluesky-post` command:
+
+```bash
+# Use the command (recommended)
+/bluesky-post "output/日本成長戦略会議_第2回_20251224_report.md"
+
+# Or extract and post manually with bash
+REPORT_FILE="output/{meeting_name}_{round}_{date}_report.md"
+awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE" | ssky post
+
+# Dry run to preview before posting
+awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE" | ssky post -d
+```
+
+### Disabling Bluesky Posting
+
+To disable Bluesky posting entirely:
+1. Logout from ssky: The skill will automatically skip posting if not logged in
+2. Or modify the base_workflow.md to comment out Step 11
+
+### Character Limit Handling
+
+Bluesky has a 300 grapheme limit per post. The ssky tool automatically handles this:
+- Long abstracts (1,000 characters) are automatically split into thread posts
+- Each post in the thread maintains context
+- URL is included in the final post of the thread
