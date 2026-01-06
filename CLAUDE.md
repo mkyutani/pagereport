@@ -4,10 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Claude Code skills project for generating structured summaries of Japanese government meeting pages. The main skill (`pagereport`) processes both HTML pages and PDF documents from government websites (primarily www.cas.go.jp), extracting metadata, analyzing meeting materials, and producing two types of output files:
+This is a Claude Code skills project for generating structured summaries of Japanese government meeting pages. The main skill (`pagereport`) processes both HTML pages and PDF documents from government websites (primarily www.cas.go.jp), extracting metadata, analyzing meeting materials, and producing a unified report file:
 
-1. **Summary file** (`*_summary.txt`): 1,000-character abstract + material list + links
-2. **Detail file** (`*_detail.md`): Comprehensive report up to 10,000 characters for future reference
+**Report file** (`*_report.md`): Markdown report containing a 1,000-character abstract (enclosed in code fences for easy extraction) + material list + comprehensive details up to 10,000 characters for future reference
 
 ## Architecture
 
@@ -34,7 +33,7 @@ The skill follows a structured 9-step workflow:
 6. **Selective Material Reading**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`, convert to Markdown with docling for token optimization (when applicable)
 7. **Type-Specific Reading**: Apply token-optimized strategies based on document type and page count
 8. **Summary Generation**: Create structured abstract (1,000 chars, 5-element structure) + detailed report
-9. **File Output**: Write to `{meeting_name}/{meeting_name}_{date}_{round}_summary.txt` and `*_detail.md`
+9. **File Output**: Write to `{meeting_name}_{round}_{date}_report.md` with abstract enclosed in code fences
 
 ### Key Design Principles
 
@@ -80,7 +79,7 @@ The skill automatically:
 - Detects round number (第X回)
 - Creates `./output` directory if it doesn't exist
 - Downloads priority PDFs to `/tmp/` using curl
-- Generates both summary and detail files in `./output/`
+- Generates unified report file in `./output/`
 
 ### Manual Testing Commands
 
@@ -92,7 +91,7 @@ curl -o /tmp/test.pdf "https://example.com/document.pdf"
 ls -la output/
 
 # Verify file creation
-cat "output/{meeting_name}_{date}_{round}_summary.txt"
+cat "output/{meeting_name}_{round}_{date}_report.md"
 ```
 
 ## Important Implementation Notes
@@ -260,16 +259,21 @@ grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
 
 ```
 output/
-├── {meeting_name}_{YYYYMMDD}_第{N}回_summary.txt
-└── {meeting_name}_{YYYYMMDD}_第{N}回_detail.md
+└── {meeting_name}_第{N}回_{YYYYMMDD}_report.md
 ```
 
 Example:
 ```
 output/
-├── 日本成長戦略会議_20251224_第2回_summary.txt
-└── 日本成長戦略会議_20251224_第2回_detail.md
+└── 日本成長戦略会議_第2回_20251224_report.md
 ```
+
+**Report File Structure:**
+- Header with meeting metadata (name, date, location)
+- **Abstract section** (enclosed in code fences for easy extraction)
+- Material list
+- Detailed information sections
+- Summary and reference links
 
 ## Modification Guidelines
 
