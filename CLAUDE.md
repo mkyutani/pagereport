@@ -114,9 +114,47 @@ cat "output/{meeting_name}_{round}_{date}_report.md"
 - **Remote PDFs**: Download with curl to `/tmp/` first (sequential downloads only)
 - **Local PDFs**: Read directly with Read tool
 
-**PDF→Markdown Conversion with docling (Token Optimization):**
+**Document Type-Based PDF Processing (Token Optimization):**
 
-Prefer docling container for converting PDFs to Markdown before processing to reduce token consumption:
+Process PDFs differently based on document type (determined in Step 3: Document Type Detection):
+
+**Strategy Overview:**
+- **PowerPoint-origin PDFs** → Use docling (structure preservation critical)
+- **Word-origin PDFs** → Use pdftotext (fast linear text extraction)
+- **Other PDFs** → Use pdftotext or Read tool based on size
+
+### Method 1: pdftotext for Word-origin PDFs (Fast)
+
+Word-origin PDFs have linear text structure, so pdftotext provides fast, efficient extraction:
+
+```bash
+# Check if pdftotext is available
+which pdftotext  # Should output: /usr/bin/pdftotext
+
+# Extract text from PDF
+pdftotext /tmp/document.pdf /tmp/document.txt
+
+# Check the output
+wc -l /tmp/document.txt  # Count lines
+
+# Read with Read tool
+# The text file can then be processed in Step 7
+```
+
+**Advantages:**
+- Very fast (seconds vs minutes for docling)
+- No Docker dependency
+- Clean text output
+- Works well for linear documents (Word-origin PDFs, reports, papers)
+
+**Limitations:**
+- No layout preservation (but Word PDFs are linear anyway)
+- Headers/footers may be included (can be filtered)
+- No structure detection (headings must be identified by content analysis)
+
+### Method 2: docling for PowerPoint-origin PDFs (Structure Preservation)
+
+PowerPoint PDFs require structure preservation (slides, bullets, layout), so use docling:
 
 ```bash
 # Start docling-serve container (one-time setup)
@@ -188,32 +226,55 @@ TASK_ID_3=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "file
 grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
 ```
 
-**Usage Decision Criteria:**
+**Usage Decision Criteria (Document Type Based):**
 
-*Use docling (asynchronous) when:*
-- Medium to large PDFs (>10 pages estimated)
-- Complex tables/layouts that benefit from structured Markdown
-- Scanned PDFs requiring OCR
-- Multiple PDFs to process (submit in parallel for efficiency)
-
-*Use docling (synchronous) when:*
-- Small PDFs (<10 pages estimated)
-- Quick conversions where 120-second timeout is sufficient
+*PowerPoint-origin PDFs → Use docling:*
+- Slide structure preservation is critical (bullet points, slide titles, layout)
+- Use asynchronous processing for medium to large files (>10 pages)
+- Use synchronous processing only for small files (<10 pages)
 - Note: If synchronous times out, automatically retry with asynchronous
+- Complex tables/layouts benefit from structured Markdown
+- Scanned PDFs requiring OCR
 
-*Use Read tool directly when:*
+*Word-origin PDFs → Use pdftotext:*
+- Linear text structure allows fast, simple extraction
+- No need for layout preservation (sequential reading is sufficient)
+- Much faster than docling (seconds vs minutes)
+- Outputs plain text, which can be processed with simple tools
+- **Command**: `pdftotext /tmp/document.pdf /tmp/document.txt`
+
+*Other PDFs (Agendas, Rosters, Surveys) → Size-based decision:*
+- Small (<20 pages): Read tool directly
+- Medium (20-50 pages): pdftotext preferred
+- Large (>50 pages): pdftotext + partial reading with offset/limit
+
+*Fallback to Read tool directly when:*
+- pdftotext not available in environment
+- Docker unavailable (for docling)
+- Conversion fails entirely
 - Very small PDFs (≤5 pages) where conversion overhead isn't worth it
-- Simple text-based documents
-- Docker unavailable in environment
-- Need to read specific pages/sections only
 
 **Processing Time Guidelines:**
+
+*PowerPoint PDFs (docling):*
 - Small PDFs (<10 pages): 1-2 minutes (synchronous or asynchronous)
 - Medium PDFs (10-30 pages): 3-5 minutes (asynchronous recommended)
 - Large PDFs (30-50 pages): 5-8 minutes (asynchronous required)
 - Multiple PDFs in parallel: Time of longest PDF + 1-2 minutes overhead
 
+*Word PDFs (pdftotext):*
+- Small PDFs (<10 pages): 5-10 seconds
+- Medium PDFs (10-30 pages): 10-30 seconds
+- Large PDFs (30-50 pages): 30-60 seconds
+- Very large PDFs (>100 pages): 1-2 minutes
+- **Much faster than docling** (10-50x speedup)
+
 **Error Handling:**
+
+0. **pdftotext not available:**
+   - Check with: `which pdftotext` or `command -v pdftotext`
+   - Install if needed: `apt-get install poppler-utils` (Debian/Ubuntu)
+   - Fallback: Use Read tool to read PDF directly
 
 1. **Docling container not running:**
    - Check with: `docker ps | grep docling`
