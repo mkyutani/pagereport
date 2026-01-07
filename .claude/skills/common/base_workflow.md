@@ -223,164 +223,294 @@ Task 3: /document-type-classifier "/tmp/shiryou3.pdf"
 document-type-classifierの詳細な判定基準とエラーハンドリングについては、
 `.claude/skills/document-type-classifier/SKILL.md` を参照してください。
 
-## ステップ7: PDF→Markdown変換（トークン最適化）
+## ステップ7: PDF→テキスト/Markdown変換（トークン最適化）
 
-**重要**: このステップを忘れずに実行してください。ステップ6の判定結果に応じて、最適な処理方法を選択します。
+**重要**: このステップを忘れずに実行してください。文書タイプに応じて効率的な変換方法を選択します。
 
-#### 処理方法の選択基準
+### 処理フロー概要
 
-- **PowerPoint由来PDF**: docling containerでMarkdown変換（スライド構造の保持が重要）
-- **Word由来PDF**: pdftotextでテキスト抽出（線形構造なので高速処理で十分）
-- **その他のPDF**: サイズと複雑さに応じて判断（基本はpdftotextを優先）
-
-#### PowerPoint PDF用: docling-serve containerの準備
-
-```bash
-# CPU-only版のコンテナをpullして起動（初回のみ）
-docker pull quay.io/docling-project/docling-serve
-docker run -d -p 5001:5001 --name docling-server quay.io/docling-project/docling-serve
-
-# コンテナの状態確認
-docker ps | grep docling
+```
+全PDF共通:
+├─ 7-1. pdftotextでテキスト化（高速スキャン、全PDF必須）
+│
+├─ PowerPoint由来PDF:
+│  ├─ 7-2. スライドタイトルから重要ページ抽出
+│  └─ 7-3. 重要ページのみdoclingでMarkdown化
+│
+└─ Word由来PDF/その他:
+   └─ pdftotextの結果をそのまま使用（Step 8へ）
 ```
 
-#### Word PDF用: pdftotextでテキスト抽出
+---
 
-Word由来のPDFは線形構造なので、pdftotextで高速にテキスト抽出できます。
+### 7-1. 全PDFのテキスト化（高速スキャン）
 
-```bash
-# PDFからテキストを抽出
-pdftotext /tmp/document.pdf /tmp/document.txt
-
-# 抽出されたテキストを確認
-wc -l /tmp/document.txt
-
-# Read toolでテキストファイルを読み取り
-# （Step 7のWord文書処理で詳細に読み取る）
-```
-
-**注意点:**
-- pdftotextは多くのLinux環境に標準インストールされています
-- インストールされていない場合: `apt-get install poppler-utils`
-- 出力はプレーンテキストなので、見出しや構造は後処理で判定
-
-#### PowerPoint PDF用: doclingでPDF→Markdown変換
-
-**変換方法の選択:**
-
-- **同期処理**: 小規模PDF (<10ページ推定) のみ使用可能（120秒タイムアウト制限）
-- **非同期処理**: 中〜大規模PDF (>10ページ) で必須、複数PDF処理時に推奨
-
-**方法1: 非同期処理（推奨、複数PDF対応）**
+まず、**全PDF（PowerPoint、Word、その他すべて）**をpdftotextでテキスト化します。
 
 ```bash
-# 1. 全PDFを非同期で投入（並行処理）
-TASK_ID_1=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
-  -F "files=@/tmp/shiryou1.pdf" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+# 各PDFをテキスト化（高速、5-30秒/ファイル）
+pdftotext /tmp/shiryou1.pdf /tmp/shiryou1.txt
+pdftotext /tmp/shiryou2.pdf /tmp/shiryou2.txt
+pdftotext /tmp/shiryou3.pdf /tmp/shiryou3.txt
 
-TASK_ID_2=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
-  -F "files=@/tmp/shiryou2.pdf" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
-
-# 2. 各タスクの完了を待機（ポーリング）
-for TASK_ID in $TASK_ID_1 $TASK_ID_2; do
-  while true; do
-    STATUS=$(curl -s "http://localhost:5001/v1/status/poll/$TASK_ID" | \
-      python3 -c "import json, sys; print(json.load(sys.stdin)['task_status'])")
-    if [ "$STATUS" = "success" ]; then
-      break
-    fi
-    sleep 15  # 15秒ごとにチェック
-  done
+# 変換結果の確認
+for file in /tmp/shiryou*.txt; do
+  echo "$file: $(wc -l < "$file") lines"
 done
-
-# 3. 結果を取得してMarkdownファイルに保存
-curl -s "http://localhost:5001/v1/result/$TASK_ID_1" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
-  > /tmp/shiryou1.md
-
-curl -s "http://localhost:5001/v1/result/$TASK_ID_2" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
-  > /tmp/shiryou2.md
 ```
 
 **処理時間の目安:**
-- 小規模PDF (<10ページ): 1-2分
-- 中規模PDF (10-30ページ): 3-5分
-- 大規模PDF (30-50ページ): 5-8分
-- 複数PDF並行処理: 最長PDFの時間 + 1-2分
-
-**方法2: 同期処理（小規模PDFのみ）**
-
-```bash
-# 小規模PDFのみ使用可能（120秒タイムアウトあり）
-curl -s -X POST http://localhost:5001/v1/convert/file \
-  -F "files=@/tmp/small.pdf" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['md_content'])" \
-  > /tmp/small.md
-
-# タイムアウトエラー ("Conversion is taking too long") が発生した場合は、
-# 方法1の非同期処理に切り替える
-```
-
-#### Markdown読み取り
-
-変換後、Read toolでMarkdownファイルを読み取ります：
-
-```bash
-# 通常の読み取り
-Read /tmp/shiryou1.md
-
-# ファイルサイズが大きい場合（>256KB、base64画像含む）:
-# Grepで見出しを抽出して構造を把握
-grep "^#{1,3}\s+" /tmp/shiryou1.md
-
-# 構造把握後、必要なセクションのみ読む
-```
-
-#### 処理方法の最終判断フロー
-
-```
-Step 3で判定した文書タイプに基づく:
-├─ PowerPoint由来PDF
-│  └─→ docling containerでMarkdown変換（非同期処理推奨）
-│      ├─ 成功 → Markdownを読み取り
-│      └─ 失敗 → Read toolで直接PDFを読むフォールバック
-│
-├─ Word由来PDF
-│  └─→ pdftotextでテキスト抽出
-│      ├─ 成功 → テキストファイルを読み取り
-│      └─ 失敗 → Read toolで直接PDFを読むフォールバック
-│
-└─ その他（議事次第、名簿、調査など）
-   └─→ PDFサイズで判断
-       ├─ 小規模（<20ページ）→ Read tool直接読み取り
-       ├─ 中規模（20-50ページ）→ pdftotext優先
-       └─ 大規模（>50ページ）→ pdftotext + 部分読み取り
-```
+- 小規模PDF (<10ページ): 5-10秒
+- 中規模PDF (10-30ページ): 10-30秒
+- 大規模PDF (30-50ページ): 30-60秒
+- 非常に大規模PDF (>100ページ): 1-2分
 
 **注意点:**
-- pdftotextが利用できない環境の場合は、全てRead toolで直接読み取り
-- docling containerは初回起動時にAIモデルのダウンロードが発生（数分）
-- 変換処理には時間がかかる（大きなPDFで1-3分程度）
-- 変換失敗時は必ずRead toolでのフォールバック処理を実装
+- pdftotextは多くのLinux環境に標準インストール
+- 未インストールの場合: `apt-get install poppler-utils`
+- 出力はプレーンテキスト（構造は後処理で判定）
 
-#### エラーハンドリング
+**フォールバック（pdftotextが使えない場合）:**
 
 ```bash
-# Word PDF用: pdftotextが利用可能か確認
+# PyPdf2を試す
+python3 << 'EOF'
+from PyPDF2 import PdfReader
+
+reader = PdfReader('/tmp/document.pdf')
+text_content = []
+for page in reader.pages:
+    text_content.append(page.extract_text())
+
+with open('/tmp/document.txt', 'w', encoding='utf-8') as f:
+    f.write('\n'.join(text_content))
+EOF
+
+# PyPdf2も使えない場合、Read toolで直接読み取り
+```
+
+---
+
+### 7-2. PowerPoint PDFの重要ページ抽出
+
+**対象:** ステップ6でPowerPoint由来と判定されたPDFのみ
+
+**目的:** 全ページをdocling変換すると時間がかかるため、重要なページのみを特定する
+
+#### 処理手順:
+
+```bash
+# 1. テキストファイルを読んでスライドタイトルを抽出
+#    Read tool で /tmp/shiryou1.txt を読み取る
+
+# 2. 各ページの内容を分析して重要度を判定
+#    - ページ区切り: pdftotextは "\f" (form feed) でページを区切る
+#    - 各ページの最初の1-2行をスライドタイトルと見なす
+
+# 3. 重要ページの判定基準:
+#    【高優先度（必ず読む）】
+#    - 背景・現状認識
+#    - 課題・問題点
+#    - 方向性・戦略
+#    - 具体的施策・取組
+#    - 予算・スケジュール
+#    - 目標・KPI
+#    - 実績・成果
+#
+#    【低優先度（スキップ）】
+#    - 表紙（資料名のみ）
+#    - 目次
+#    - 参考資料
+#    - 補足資料
+#    - 用語集
+#    - 組織図・名簿
+#    - 免責事項・注記
+
+# 4. 重要ページ番号をリスト化
+#    例: [3, 4, 5, 6, 7, 10, 12, 15]  # 1始まり
+```
+
+#### 判定例:
+
+| ページ | スライドタイトル（テキストの最初の行） | 判定 | 理由 |
+|--------|--------------------------------------|------|------|
+| 1 | 資料1-1 日本成長戦略の概要 | ✗ | 表紙 |
+| 2 | 目次 | ✗ | 目次 |
+| 3 | 1. 背景・現状認識 | ✓ | 現状認識 |
+| 4 | 製造装置シェアの推移 | ✓ | データ・実績 |
+| 5 | 2. 今後の方向性 | ✓ | 戦略・方向性 |
+| 6 | 3つの重点施策 | ✓ | 具体的施策 |
+| 7 | (1) デジタル投資の促進 | ✓ | 施策詳細 |
+| ... | ... | ... | ... |
+| 35 | 参考資料 | ✗ | 参考 |
+
+**出力:** 重要ページ番号のリスト（例: `3,4,5,6,7,10,12,15`）
+
+**目安:** 全50ページ中、重要ページは10-20ページ程度に絞る
+
+---
+
+### 7-3. PowerPoint PDFの部分Markdown化
+
+**対象:** 7-2で抽出した重要ページのみ
+
+**ツール:** docling container（スライド構造を保持するため）
+
+#### docling-serve containerの準備
+
+```bash
+# 初回のみ: コンテナをpullして起動
+docker pull quay.io/docling-project/docling-serve
+docker run -d -p 5001:5001 --name docling-server quay.io/docling-project/docling-serve
+
+# 既に起動済みか確認
+docker ps | grep docling
+```
+
+#### 重要ページのみMarkdown化
+
+**アプローチ:** doclingはページ範囲指定に対応していないため、全ページ変換後に重要ページのみ抽出
+
+```bash
+# 1. PDF全体を非同期で変換（並列処理のため、複数PDFを同時投入可能）
+TASK_ID=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
+  -F "files=@/tmp/shiryou1.pdf" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+
+# 2. 変換完了を待機（ポーリング、15秒ごとにチェック）
+while true; do
+  STATUS=$(curl -s "http://localhost:5001/v1/status/poll/$TASK_ID" | \
+    python3 -c "import json, sys; print(json.load(sys.stdin)['task_status'])")
+  echo "Conversion status: $STATUS"
+  if [ "$STATUS" = "success" ]; then
+    break
+  elif [ "$STATUS" = "failure" ]; then
+    echo "Conversion failed"
+    exit 1
+  fi
+  sleep 15
+done
+
+# 3. 結果を取得してMarkdownファイルに保存
+curl -s "http://localhost:5001/v1/result/$TASK_ID" | \
+  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
+  > /tmp/shiryou1_full.md
+
+# 4. 重要ページのみ抽出（Pythonスクリプト）
+python3 << 'EOF'
+import re
+
+# Markdownファイルを読み込み
+with open('/tmp/shiryou1_full.md', 'r') as f:
+    content = f.read()
+
+# 重要ページ番号（7-2で特定したもの）
+important_pages = [3, 4, 5, 6, 7, 10, 12, 15]
+
+# doclingの出力形式に応じてページ区切りを検出
+# 一般的な形式: "## Page N" または "<!-- page N -->"
+pages = re.split(r'(?:##\s*Page\s*(\d+)|<!--\s*page\s*(\d+)\s*-->)', content, flags=re.IGNORECASE)
+
+# 重要ページのみ抽出
+important_content = []
+for i in range(1, len(pages), 3):  # (区切り, ページ番号1, ページ番号2, コンテンツ) のパターン
+    page_num_str = pages[i] or pages[i+1]  # どちらかにページ番号が入る
+    if page_num_str:
+        page_num = int(page_num_str)
+        page_content = pages[i+2] if i+2 < len(pages) else ''
+        if page_num in important_pages:
+            important_content.append(f'## Page {page_num}\n{page_content}')
+
+# 重要ページのみのMarkdownファイルを保存
+with open('/tmp/shiryou1.md', 'w') as f:
+    f.write('\n\n---\n\n'.join(important_content))
+
+print(f"Extracted {len(important_content)} important pages from {len(pages)//3} total pages")
+EOF
+
+# 5. 抽出結果の確認
+wc -l /tmp/shiryou1.md
+```
+
+**処理時間の目安:**
+- docling変換（全ページ）: 3-8分（ページ数による）
+- 重要ページ抽出: 10-30秒
+- **合計（PowerPoint PDF）:** 約4-10分/ファイル
+
+**並列処理:** 複数のPowerPoint PDFがある場合、docling変換を並列実行可能（全て非同期で投入→全て完了待ち）
+
+---
+
+### 処理方法の最終判断フロー
+
+```
+Step 6の判定結果に基づく:
+
+├─ PowerPoint由来PDF
+│  ├─ 7-1: pdftotext でテキスト化（全ページ、高速）
+│  ├─ 7-2: スライドタイトル分析→重要ページ抽出
+│  └─ 7-3: docling で重要ページのみMarkdown化
+│      ├─ 成功 → 部分Markdown使用（Step 8へ）
+│      └─ 失敗 → pdftotextの全文テキスト使用（Step 8へ）
+│
+├─ Word由来PDF
+│  └─ 7-1: pdftotext でテキスト化
+│      ├─ 成功 → テキストファイル使用（Step 8へ）
+│      └─ 失敗 → Read toolで直接読み取り（Step 8へ）
+│
+└─ その他（議事次第、名簿、調査など）
+   └─ 7-1: pdftotext でテキスト化
+       ├─ 成功 → テキストファイル使用（Step 8へ）
+       └─ 失敗 → Read toolで直接読み取り（Step 8へ）
+```
+
+---
+
+### 処理時間の比較
+
+| 文書タイプ | 処理内容 | 時間 |
+|-----------|---------|------|
+| Word PDF (30ページ) | pdftotext のみ | 30秒 |
+| PowerPoint PDF (50ページ) | pdftotext + 重要ページ抽出 + docling部分変換 | 5-8分 |
+| その他 PDF (10ページ) | pdftotext のみ | 10秒 |
+
+**効率化のポイント:**
+- Word/その他は高速処理（pdftotextのみ、数十秒）
+- PowerPoint のみ時間がかかる（docling使用、数分）
+- 複数PowerPoint PDFは並列処理可能（同時に非同期変換）
+
+---
+
+### エラーハンドリング
+
+```bash
+# 7-1: pdftotext が利用可能か確認
 if ! command -v pdftotext &> /dev/null; then
-    echo "pdftotext not available, using Read tool instead"
-    # Read toolで直接PDFを読む処理へフォールバック
+    echo "pdftotext not available, trying PyPdf2..."
+
+    # PyPdf2 フォールバック
+    if python3 -c "import PyPDF2" &> /dev/null 2>&1; then
+        echo "Using PyPdf2 for text extraction"
+        # PyPdf2で処理（上記のPythonスクリプト使用）
+    else
+        echo "PyPdf2 not available, using Read tool instead"
+        # Read toolで直接PDFを読む（Step 8へ）
+    fi
 fi
 
-# PowerPoint PDF用: docling containerが起動しているか確認
+# 7-3: PowerPoint PDF用 - docling container確認
 if ! docker ps | grep -q docling-server; then
-    echo "docling container not running, using Read tool instead"
-    # Read toolで直接PDFを読む処理へフォールバック
+    echo "docling container not running, using pdftotext output instead"
+    # pdftotextの全文テキストをそのまま使用（Step 8へ）
+fi
+
+# 7-3: docling変換失敗時
+if [ ! -s /tmp/shiryou1.md ]; then
+    echo "docling conversion failed, using pdftotext output instead"
+    # pdftotextの全文テキストをそのまま使用（Step 8へ）
 fi
 ```
+
 
 ## ステップ8: 資料の読み取りと分析（トークン最適化）
 

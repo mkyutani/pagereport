@@ -69,8 +69,9 @@ echo "✓ Abstract extracted successfully (${#ABSTRACT} characters)"
 ### 3. Blueskyへの投稿
 
 ```bash
-# 投稿実行
-echo "$ABSTRACT" | ssky post
+# 投稿実行（プロセス置換を使用）
+# 注意: パイプ（|）ではなくプロセス置換（< <(...)）を使う
+ssky post < <(awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE")
 
 if [ $? -eq 0 ]; then
     echo "✅ Successfully posted to Bluesky!"
@@ -171,7 +172,7 @@ echo ""
 
 # Blueskyへの投稿
 echo "Posting to Bluesky..."
-if echo "$ABSTRACT" | ssky post; then
+if ssky post < <(awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE"); then
     echo ""
     echo "✅ Successfully posted to Bluesky!"
 else
