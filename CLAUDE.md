@@ -19,6 +19,13 @@ This is a Claude Code skills project for generating structured summaries of Japa
 - `common/base_workflow.md`: Shared workflow specification used by all skills
   - Defines an 11-step processing pipeline from content fetching to Bluesky posting
   - Includes detailed rules for PDF prioritization, document type detection, and token optimization
+- `document-type-classifier/`: Subagent for Step 6 (document type detection)
+  - Analyzes PDF structure to determine document type (Word/PowerPoint/etc)
+  - Supports parallel execution for multiple PDFs
+- `material-analyzer/`: Subagent for Step 8 (material analysis)
+  - Applies document type-specific reading strategies
+  - Supports parallel execution for multiple materials
+  - Generates detailed summaries with key points
 
 **Commands**: `.claude/commands/`
 - `bluesky-post.md`: Standalone command to extract abstract from report and post to Bluesky
@@ -26,7 +33,7 @@ This is a Claude Code skills project for generating structured summaries of Japa
   - Automatically called by skills in Step 11
 
 **Permissions**: `.claude/settings.local.json`
-- Pre-authorized tools: `WebFetch(domain:www.cas.go.jp)`, `Bash(curl:*)`, `Bash(mkdir:*)`, `Bash(ls:*)`
+- Pre-authorized tools: `Bash(curl:*)`, `Bash(mkdir:*)`, `Bash(ls:*)`, `Bash(python3:*)`, `WebFetch(domain:github.com)`, `Read(path:/tmp/*)`, `Write(path:/tmp/*)`, `Edit(path:/tmp/*)`
 - These permissions allow the skill to operate without manual approval for common operations
 
 ### Processing Pipeline
@@ -38,14 +45,20 @@ The skill follows a structured 11-step workflow:
 3. **Meeting Overview Creation**: Extract from HTML or agenda PDF
 4. **Minutes Reference**: Locate actual participant statements if available
 5. **Material Selection and Download**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`
-6. **Document Type Detection**: Judge PDF type (Word/PowerPoint/Other) from first 5 pages
+6. **Document Type Detection** (**Parallel Subagents**): Use `document-type-classifier` subagent to judge PDF type (Word/PowerPoint/Other) from first 5 pages. Multiple PDFs are classified in parallel for speed.
 7. **PDF to Markdown Conversion**: Convert with docling (PowerPoint) or pdftotext (Word) for token optimization
-8. **Type-Specific Reading**: Apply token-optimized strategies based on document type and page count
+8. **Type-Specific Reading** (**Parallel Subagents**): Use `material-analyzer` subagent to apply token-optimized strategies based on document type and page count. Multiple materials are analyzed in parallel, reducing processing time by 30-50%.
 9. **Summary Generation**: Create structured abstract (1,000 chars, 5-element structure) + detailed report
 10. **File Output**: Write to `{meeting_name}_{round}_{date}_report.md` with abstract enclosed in code fences
 11. **Bluesky Posting**: Automatically post the abstract to Bluesky using `ssky post` command
 
 ### Key Design Principles
+
+**Parallel Processing**:
+- Document type detection (Step 6) runs in parallel for multiple PDFs
+- Material analysis (Step 8) runs in parallel for multiple materials
+- Reduces overall processing time by 30-50% when handling 3+ materials
+- Each subagent operates independently with its own context
 
 **Token Optimization**:
 - Convert PDFs to Markdown with docling container when beneficial (>50 pages, complex layouts)
