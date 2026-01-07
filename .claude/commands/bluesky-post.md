@@ -1,3 +1,13 @@
+---
+name: bluesky-post
+description: レポートファイルからアブストラクトを抽出してBlueskyに投稿
+allowed-tools:
+  - Bash(ssky:*)
+  - Bash(awk:*)
+  - Read(path:./output/*)
+auto-execute: true
+---
+
 # Bluesky投稿コマンド
 
 このコマンドは、生成されたレポートファイルからアブストラクトを抽出し、Blueskyに投稿します。
@@ -54,24 +64,38 @@ fi
 report.mdからアブストラクトを抽出します。アブストラクトは`## アブストラクト`セクション内のコードフェンスで囲まれています。
 
 ```bash
-# awkでコードフェンス内のテキストを抽出
-ABSTRACT=$(awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE")
+# Step 1: awkでコードフェンス内のテキストを一時ファイルに抽出
+awk '/## アブストラクト/{found=1; next} \
+     found && /^```$/{count++; next} \
+     found && count==1 && /^## /{exit} \
+     found && count==1{print}' "$REPORT_FILE" > /tmp/abstract.txt
 
 # 抽出結果を確認
-if [ -z "$ABSTRACT" ]; then
+if [ ! -s /tmp/abstract.txt ]; then
     echo "❌ Failed to extract abstract from report file."
     exit 1
 fi
 
-echo "✓ Abstract extracted successfully (${#ABSTRACT} characters)"
+CHAR_COUNT=$(wc -c < /tmp/abstract.txt)
+echo "✓ Abstract extracted successfully ($CHAR_COUNT bytes)"
 ```
 
-### 3. Blueskyへの投稿
+### 3. 投稿内容の準備
 
 ```bash
-# 投稿実行（プロセス置換を使用）
-# 注意: パイプ（|）ではなくプロセス置換（< <(...)）を使う
-ssky post < <(awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE")
+# Step 2: アブストラクト + URL を投稿ファイルに準備
+cat /tmp/abstract.txt > /tmp/post.txt
+echo "https://example.com/meeting/page.html" >> /tmp/post.txt
+
+# 注意: abstract.txtの末尾には改行があるため、echoで1行追加するだけでOK
+# 余分なecho ""は不要
+```
+
+### 4. Blueskyへの投稿
+
+```bash
+# Step 3: 準備したファイルから投稿
+cat /tmp/post.txt | ssky post
 
 if [ $? -eq 0 ]; then
     echo "✅ Successfully posted to Bluesky!"
@@ -81,7 +105,7 @@ else
 fi
 ```
 
-### 4. 投稿結果の表示
+### 5. 投稿結果の表示
 
 ```bash
 # 最新の投稿を確認（オプション）
@@ -158,21 +182,29 @@ if [ ! -f "$REPORT_FILE" ]; then
     exit 1
 fi
 
-# アブストラクトの抽出
+# Step 1: アブストラクトの抽出
 echo "Extracting abstract from report..."
-ABSTRACT=$(awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE")
+awk '/## アブストラクト/{found=1; next} \
+     found && /^```$/{count++; next} \
+     found && count==1 && /^## /{exit} \
+     found && count==1{print}' "$REPORT_FILE" > /tmp/abstract.txt
 
-if [ -z "$ABSTRACT" ]; then
+if [ ! -s /tmp/abstract.txt ]; then
     echo "❌ Failed to extract abstract from report file."
     exit 1
 fi
 
-echo "✓ Abstract extracted successfully (${#ABSTRACT} characters)"
+CHAR_COUNT=$(wc -c < /tmp/abstract.txt)
+echo "✓ Abstract extracted successfully ($CHAR_COUNT bytes)"
 echo ""
 
-# Blueskyへの投稿
+# Step 2: URLを追加して投稿ファイル準備
+cat /tmp/abstract.txt > /tmp/post.txt
+grep -oP 'https?://[^\s]+' "$REPORT_FILE" | head -n 1 >> /tmp/post.txt
+
+# Step 3: Blueskyへの投稿
 echo "Posting to Bluesky..."
-if ssky post < <(awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE"); then
+if cat /tmp/post.txt | ssky post; then
     echo ""
     echo "✅ Successfully posted to Bluesky!"
 else

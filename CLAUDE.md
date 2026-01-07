@@ -16,6 +16,7 @@ This is a Claude Code skills project for generating structured summaries of Japa
 - `pagereport-cas/`: Internal Cabinet Office (内閣府) meeting pages
 - `pagereport-cao/`: Cabinet Office (総務省) meeting pages
 - `pagereport-meti/`: Ministry of Economy, Trade and Industry (経済産業省) meeting pages
+- `pagereport-chusho/`: Small and Medium Enterprise Agency (中小企業庁) meeting pages
 - `common/base_workflow.md`: Shared workflow specification used by all skills
   - Defines an 11-step processing pipeline from content fetching to Bluesky posting
   - Includes detailed rules for PDF prioritization, document type detection, and token optimization
@@ -26,6 +27,20 @@ This is a Claude Code skills project for generating structured summaries of Japa
   - Applies document type-specific reading strategies
   - Supports parallel execution for multiple materials
   - Generates detailed summaries with key points
+
+**Subagents**: `.claude/skills/document-type-classifier/` and `.claude/skills/material-analyzer/`
+- `document-type-classifier/`: Document type detection subagent (Step 6)
+  - **CRITICAL**: Must have YAML frontmatter in SKILL.md with name, description, allowed-tools
+  - Analyzes PDF structure to determine type (Word/PowerPoint/etc)
+  - Supports parallel execution for multiple PDFs
+- `material-analyzer/`: Material analysis subagent (Step 8)
+  - **CRITICAL**: Must have YAML frontmatter in SKILL.md with name, description, allowed-tools
+  - Applies document type-specific reading strategies
+  - Supports parallel execution for multiple materials
+  - Generates detailed summaries with key points
+- **If subagents are unavailable**: Processing will terminate with error message
+  - Workflow checks subagent availability before Step 6 and Step 8
+  - Fallback to direct processing is NOT supported (to prioritize system configuration fixes)
 
 **Commands**: `.claude/commands/`
 - `bluesky-post.md`: Standalone command to extract abstract from report and post to Bluesky
@@ -96,6 +111,7 @@ The skill follows a structured 11-step workflow:
 /pagereport-cas "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/kaigi/dai2/gijisidai.html"
 /pagereport-cao "https://www.cao.go.jp/..."
 /pagereport-meti "https://www.meti.go.jp/..."
+/pagereport-chusho "https://www.chusho.meti.go.jp/..."
 ```
 
 The skill automatically:
@@ -147,11 +163,15 @@ awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} el
 
 ### Error Handling
 
-1. **HTML fetch failure**: Retry with normalization, log each stage
-2. **PDF download failure**: Log curl error, skip file, note "download failed" in detail.md
-3. **PDF read failure**: Log Read tool error, mark as "unreadable" in output
-4. **Missing metadata**: Prompt user for meeting name, date, or round number
-5. **Bluesky posting failure**: Log warning, skip posting, report generation continues normally
+1. **Subagent unavailable**: Terminate processing with clear error message
+   - Check subagent SKILL.md has YAML frontmatter (name, description, allowed-tools)
+   - Verify subagent is registered in Claude Code's skill list
+   - User should fix configuration and restart session
+2. **HTML fetch failure**: Retry with normalization, log each stage
+3. **PDF download failure**: Log curl error, skip file, note "download failed" in detail.md
+4. **PDF read failure**: Log Read tool error, mark as "unreadable" in output
+5. **Missing metadata**: Prompt user for meeting name, date, or round number
+6. **Bluesky posting failure**: Log warning, skip posting, report generation continues normally
 
 ### Content Cleaning (HTML)
 
@@ -617,12 +637,24 @@ If automatic posting is skipped, you can use the `/bluesky-post` command:
 # Use the command (recommended)
 /bluesky-post "output/日本成長戦略会議_第2回_20251224_report.md"
 
-# Or extract and post manually with bash
+# Or extract and post manually with bash (3-step method for reliability)
 REPORT_FILE="output/{meeting_name}_{round}_{date}_report.md"
-awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE" | ssky post
+
+# Step 1: Extract abstract to temp file
+awk '/## アブストラクト/{found=1; next} \
+     found && /^```$/{count++; next} \
+     found && count==1 && /^## /{exit} \
+     found && count==1{print}' "$REPORT_FILE" > /tmp/abstract.txt
+
+# Step 2: Add URL to create complete post
+cat /tmp/abstract.txt > /tmp/post.txt
+grep -oP 'https?://[^\s]+' "$REPORT_FILE" | head -n 1 >> /tmp/post.txt
+
+# Step 3: Post to Bluesky
+cat /tmp/post.txt | ssky post
 
 # Dry run to preview before posting
-awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "$REPORT_FILE" | ssky post -d
+cat /tmp/post.txt | ssky post -d
 ```
 
 ### Disabling Bluesky Posting
