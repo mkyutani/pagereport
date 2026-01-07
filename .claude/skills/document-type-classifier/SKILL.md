@@ -1,3 +1,14 @@
+---
+name: document-type-classifier
+description: PDF文書の種類を自動判定（Word/PowerPoint/その他）。pagereportスキルのステップ6で使用される内部サブエージェント
+allowed-tools:
+  - Bash(pdftotext:*)
+  - Bash(pdfinfo:*)
+  - Read(path:/tmp/*)
+  - Write(path:/tmp/*)
+auto-execute: true
+---
+
 # document-type-classifier
 
 PDF文書の種類を自動判定するサブエージェント。

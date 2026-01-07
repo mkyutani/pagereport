@@ -1,3 +1,16 @@
+---
+name: material-analyzer
+description: 変換済み資料（Markdown/テキスト）を分析し、文書タイプ別の最適化戦略で要約を生成。pagereportスキルのステップ8で使用される内部サブエージェント
+allowed-tools:
+  - Bash(grep:*)
+  - Bash(awk:*)
+  - Bash(wc:*)
+  - Read(path:/tmp/*)
+  - Grep
+  - Glob
+auto-execute: true
+---
+
 # material-analyzer
 
 変換済みの資料ファイル（Markdown/テキスト）を分析し、詳細な要約を生成するサブエージェント。
