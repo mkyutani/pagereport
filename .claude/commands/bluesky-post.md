@@ -33,7 +33,7 @@ fi
 #### ログイン状態の確認
 
 ```bash
-if ! ssky profile &> /dev/null; then
+if ! ssky profile myself &> /dev/null; then
     echo "❌ Not logged in to Bluesky."
     echo "To login: ssky login"
     exit 1
@@ -146,7 +146,7 @@ if ! command -v ssky &> /dev/null; then
 fi
 
 # ログイン状態の確認
-if ! ssky profile &> /dev/null; then
+if ! ssky profile myself &> /dev/null; then
     echo "❌ Not logged in to Bluesky."
     echo "To login: ssky login"
     exit 1

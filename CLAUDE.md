@@ -134,7 +134,7 @@ ls -la output/
 cat "output/{meeting_name}_{round}_{date}_report.md"
 
 # Test Bluesky login status
-ssky profile
+ssky profile myself
 
 # Test abstract extraction
 awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "output/{meeting_name}_{round}_{date}_report.md"
@@ -575,7 +575,7 @@ A standalone `/bluesky-post` command is also available for manually posting exis
 which ssky
 
 # Verify login status
-ssky profile
+ssky profile myself
 
 # Should display your profile information
 ```
