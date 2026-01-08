@@ -8,7 +8,7 @@
 
 ## 主な機能
 
-- **複数の政府機関に対応**: 内閣府（CAS）、総務省（CAO）、経済産業省（METI）
+- **複数の政府機関に対応**: 内閣官房（CAS）、内閣府（CAO）、経済産業省（METI）、中小企業庁（Chusho）、厚生労働省（MHLW）
 - **並列処理による高速化**: 文書タイプ検出と資料分析を並列実行（30-50%の処理時間短縮）
 - **自動メタデータ抽出**: 会議名、日付（YYYYMMDD形式に変換）、回数、開催場所を自動抽出
 - **PDF優先度付けシステム**: 関連性、重要性、文書タイプに基づいてPDFをスコアリング（1-5）
@@ -21,14 +21,20 @@
 ### 基本的な使用方法
 
 ```bash
-# 内閣府（CAS）の会議ページを処理
+# 内閣官房（CAS）の会議ページを処理
 /pagereport-cas "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/kaigi/dai2/gijisidai.html"
 
-# 総務省（CAO）の会議ページを処理
+# 内閣府（CAO）の会議ページを処理
 /pagereport-cao "https://www.cao.go.jp/..."
 
 # 経済産業省（METI）の会議ページを処理
 /pagereport-meti "https://www.meti.go.jp/..."
+
+# 中小企業庁（Chusho）の会議ページを処理
+/pagereport-chusho "https://www.chusho.meti.go.jp/..."
+
+# 厚生労働省（MHLW）の会議ページを処理
+/pagereport-mhlw "https://www.mhlw.go.jp/..."
 ```
 
 ### Bluesky投稿
@@ -121,17 +127,24 @@ output/
 ```
 .
 ├── .claude/
-│   ├── commands/
-│   │   └── bluesky-post.md          # Bluesky投稿コマンド
 │   ├── skills/
-│   │   ├── pagereport-cas/          # 内閣府スキル
+│   │   ├── pagereport-cas/          # 内閣官房スキル
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-cao/          # 総務省スキル
+│   │   ├── pagereport-cao/          # 内閣府スキル
 │   │   │   └── SKILL.md
 │   │   ├── pagereport-meti/         # 経済産業省スキル
 │   │   │   └── SKILL.md
+│   │   ├── pagereport-chusho/       # 中小企業庁スキル
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-mhlw/         # 厚生労働省スキル
+│   │   │   └── SKILL.md
+│   │   ├── bluesky-post/            # Bluesky投稿スキル
+│   │   │   ├── SKILL.md
+│   │   │   └── post.sh
 │   │   ├── document-type-classifier/ # 文書タイプ検出サブエージェント
+│   │   │   └── SKILL.md
 │   │   ├── material-analyzer/       # 資料分析サブエージェント
+│   │   │   └── SKILL.md
 │   │   └── common/
 │   │       └── base_workflow.md     # 共通ワークフロー（11ステップ）
 │   └── settings.local.json          # 権限設定
