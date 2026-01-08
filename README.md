@@ -8,7 +8,7 @@
 
 ## 主な機能
 
-- **複数の政府機関に対応**: 内閣官房（CAS）、内閣府（CAO）、経済産業省（METI）、中小企業庁（Chusho）、厚生労働省（MHLW）
+- **複数の政府機関に対応**: 内閣官房（CAS）、内閣府（CAO）、経済産業省（METI）、中小企業庁（Chusho）、厚生労働省（MHLW）、金融庁（FSA）
 - **並列処理による高速化**: 文書タイプ検出と資料分析を並列実行（30-50%の処理時間短縮）
 - **自動メタデータ抽出**: 会議名、日付（YYYYMMDD形式に変換）、回数、開催場所を自動抽出
 - **PDF優先度付けシステム**: 関連性、重要性、文書タイプに基づいてPDFをスコアリング（1-5）
@@ -35,6 +35,9 @@
 
 # 厚生労働省（MHLW）の会議ページを処理
 /pagereport-mhlw "https://www.mhlw.go.jp/..."
+
+# 金融庁（FSA）の会議ページを処理
+/pagereport-fsa "https://www.fsa.go.jp/..."
 ```
 
 ### Bluesky投稿
@@ -137,6 +140,8 @@ output/
 │   │   ├── pagereport-chusho/       # 中小企業庁スキル
 │   │   │   └── SKILL.md
 │   │   ├── pagereport-mhlw/         # 厚生労働省スキル
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-fsa/          # 金融庁スキル
 │   │   │   └── SKILL.md
 │   │   ├── bluesky-post/            # Bluesky投稿スキル
 │   │   │   ├── SKILL.md

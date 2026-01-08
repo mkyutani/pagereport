@@ -18,6 +18,7 @@ This is a Claude Code skills project for generating structured summaries of Japa
 - `pagereport-meti/`: Ministry of Economy, Trade and Industry (経済産業省) meeting pages
 - `pagereport-chusho/`: Small and Medium Enterprise Agency (中小企業庁) meeting pages
 - `pagereport-mhlw/`: Ministry of Health, Labour and Welfare (厚生労働省) meeting pages
+- `pagereport-fsa/`: Financial Services Agency (金融庁) meeting pages
 - `common/base_workflow.md`: Shared workflow specification used by all skills
   - Defines an 11-step processing pipeline from content fetching to Bluesky posting
   - Includes detailed rules for PDF prioritization, document type detection, and token optimization
@@ -114,6 +115,7 @@ The skill follows a structured 11-step workflow:
 /pagereport-meti "https://www.meti.go.jp/..."
 /pagereport-chusho "https://www.chusho.meti.go.jp/..."
 /pagereport-mhlw "https://www.mhlw.go.jp/..."
+/pagereport-fsa "https://www.fsa.go.jp/..."
 ```
 
 The skill automatically:
@@ -540,6 +542,12 @@ done
 │   │   ├── pagereport-cao/          # Cabinet Office skill
 │   │   │   └── SKILL.md
 │   │   ├── pagereport-meti/         # METI skill
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-chusho/       # Small and Medium Enterprise Agency skill
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-mhlw/         # Ministry of Health, Labour and Welfare skill
+│   │   │   └── SKILL.md
+│   │   ├── pagereport-fsa/          # Financial Services Agency skill
 │   │   │   └── SKILL.md
 │   │   └── common/
 │   │       └── base_workflow.md     # Shared workflow (11 steps)
