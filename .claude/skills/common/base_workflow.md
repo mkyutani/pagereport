@@ -436,6 +436,89 @@ curl -s "http://localhost:5001/v1/result/$TASK_ID" | \
   python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
   > /tmp/shiryou1_full.md
 
+# 3.5. 画像を別ファイルに抽出してMarkdownから削除（重要！）
+# doclingは画像をbase64エンコードで埋め込むため、ファイルサイズが巨大になる
+# 後続処理のために画像を抽出して別ファイルに保存し、Markdownからは削除する
+python3 << 'EOF'
+import re
+import base64
+import os
+import sys
+
+# Input/output paths
+md_file = '/tmp/shiryou1_full.md'
+output_md_file = '/tmp/shiryou1_full.md'  # Overwrite with cleaned version
+
+# Create images directory
+pdf_basename = 'shiryou1'  # Adjust based on actual filename
+images_dir = f'/tmp/{pdf_basename}_images'
+os.makedirs(images_dir, exist_ok=True)
+
+# Read Markdown content
+try:
+    with open(md_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+except Exception as e:
+    print(f'Error reading Markdown file: {e}', file=sys.stderr)
+    sys.exit(1)
+
+# Pattern to match base64-encoded images in Markdown
+# Matches: ![alt](data:image/png;base64,iVBORw0KG...)
+image_pattern = r'!\[([^\]]*)\]\(data:image/([^;]+);base64,([^)]+)\)'
+
+image_count = 0
+page_num = 1
+
+def extract_image(match):
+    global image_count, page_num
+
+    alt_text = match.group(1)
+    image_format = match.group(2)  # png, jpeg, etc.
+    base64_data = match.group(3)
+
+    # Determine page number from preceding content
+    preceding_text = content[:match.start()]
+    page_markers = re.findall(r'##\s*Page\s*(\d+)', preceding_text, re.IGNORECASE)
+    if page_markers:
+        page_num = int(page_markers[-1])
+
+    # Generate filename
+    image_count += 1
+    filename = f'page_{page_num:03d}_image_{image_count:03d}.{image_format}'
+    filepath = os.path.join(images_dir, filename)
+
+    # Decode and save image
+    try:
+        image_data = base64.b64decode(base64_data)
+        with open(filepath, 'wb') as img_file:
+            img_file.write(image_data)
+        print(f'Extracted: {filename} ({len(image_data)} bytes)', file=sys.stderr)
+        return ''  # Remove image from Markdown
+    except Exception as e:
+        print(f'Error extracting image: {e}', file=sys.stderr)
+        return match.group(0)  # Keep original if extraction fails
+
+# Replace all base64 images
+cleaned_content = re.sub(image_pattern, extract_image, content)
+
+# Write cleaned Markdown
+try:
+    with open(output_md_file, 'w', encoding='utf-8') as f:
+        f.write(cleaned_content)
+    print(f'Total images extracted: {image_count}', file=sys.stderr)
+    print(f'Images saved to: {images_dir}', file=sys.stderr)
+    print(f'Cleaned Markdown size: {len(cleaned_content)} bytes (was {len(content)} bytes)', file=sys.stderr)
+except Exception as e:
+    print(f'Error writing cleaned Markdown: {e}', file=sys.stderr)
+    sys.exit(1)
+EOF
+
+# Verify the result
+echo "Cleaned Markdown file:"
+ls -lh /tmp/shiryou1_full.md
+echo "Images directory:"
+ls -lh /tmp/shiryou1_images/ 2>/dev/null || echo "No images found"
+
 # 4. 重要ページのみ抽出（Pythonスクリプト）
 python3 << 'EOF'
 import re
@@ -852,19 +935,18 @@ output/
 ### 目的
 生成したアブストラクトをBlueskyに自動投稿し、会議情報を広く共有する。
 
-### コマンドの使用
+### スキルの使用
 
-このステップでは、[bluesky-postコマンド](../../commands/bluesky-post.md)を使用します。
+このステップでは、[bluesky-postスキル](../bluesky-post/SKILL.md)を使用します。
 
 ```bash
-# 生成されたレポートファイルを引数に指定
-REPORT_FILE="./output/{会議名}_{回数}_{日付}_report.md"
-
-# Bluesky投稿コマンドを実行
-# コマンドの詳細は .claude/commands/bluesky-post.md を参照
+# 生成されたレポートファイルを引数に指定して投稿スクリプトを実行
+bash .claude/skills/bluesky-post/post.sh "./output/{会議名}_{回数}_{日付}_report.md"
 ```
 
 ### 処理フロー
+
+bluesky-postスキルは以下の処理を自動的に実行します：
 
 1. **事前確認**: sskyコマンドの存在確認、ログイン状態確認
 2. **アブストラクト抽出**: awkでコードフェンス内のテキストを `/tmp/abstract.txt` に抽出
@@ -872,12 +954,11 @@ REPORT_FILE="./output/{会議名}_{回数}_{日付}_report.md"
 4. **投稿実行**: `cat /tmp/post.txt | ssky post` で投稿（長いテキストは自動的にスレッド分割）
 5. **結果表示**: 投稿成功/失敗のメッセージを表示
 
-**実装のポイント**:
-- ワンライナーでの抽出・投稿は不確実なため、**3ステップに分割**
-- Step 1: awkでアブストラクトを `/tmp/abstract.txt` に抽出
-- Step 2: `cat abstract.txt > post.txt && echo URL >> post.txt` で投稿内容準備
-- Step 3: `cat post.txt | ssky post` で投稿
-- この方法により、各ステップで内容を確認でき、デバッグが容易
+**実装のメリット**:
+- スクリプトファイル化により、複数行の読みやすいシェルスクリプトとして記述
+- エラーハンドリングが充実（set -e によるエラー時即座終了）
+- 各ステップで内容を確認でき、デバッグが容易
+- 全pagereportスキルで共通のロジックを使用
 
 ### エラーハンドリング
 
@@ -895,11 +976,13 @@ REPORT_FILE="./output/{会議名}_{回数}_{日付}_report.md"
 - **必須**: ステップ10でファイル出力が完了した後に実行
 - **非破壊的**: 投稿失敗してもレポートファイル生成には影響しない
 - **ユーザー通知**: 投稿成功/失敗を明確にメッセージ表示
-- **スキップ可能**: sskyがない、またはログインしていない場合は警告のみでスキップ
+- **スキップ可能**: sskyがない、またはログインしていない場合は警告のみでスキップ（exit 0）
 
 ### 詳細
 
-投稿の詳細（コマンド実装、エラーハンドリング、文字数制限の処理など）については、[bluesky-postコマンドのドキュメント](../../commands/bluesky-post.md)を参照してください。
+投稿スクリプトの実装詳細については、[bluesky-postスキルのドキュメント](../bluesky-post/SKILL.md)およびスクリプトファイル[post.sh](../bluesky-post/post.sh)を参照してください。
+
+手動で投稿する場合は、`.claude/commands/bluesky-post.md`コマンドを使用することもできます。
 
 # エラーハンドリング
 
