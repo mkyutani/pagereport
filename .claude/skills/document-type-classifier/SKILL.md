@@ -4,6 +4,9 @@ description: PDF文書の種類を自動判定（Word/PowerPoint/その他）。
 allowed-tools:
   - Bash(pdftotext:*)
   - Bash(pdfinfo:*)
+  - Bash(python3:*)
+  - Bash(cat:*)
+  - Bash(echo:*)
   - Read(path:/tmp/*)
   - Write(path:/tmp/*)
 auto-execute: true
@@ -208,3 +211,13 @@ JSON形式で標準出力に結果を出力します:
 - 判定結果は次のステップ（PDF→Markdown変換）の処理方法選択にのみ使用されます
 - 信頼度が `low` の場合でも、best-effort で最も可能性の高いタイプを返します
 - 短いPDF（1-2ページ）の場合、判定精度が低下する可能性があります
+
+## エラー時の処理
+
+**重要**: エラーが発生した場合でも、必ずJSON形式で結果を出力してください。
+
+- **致命的エラー（ファイルが存在しない、PDFが破損など）**: エラー情報をJSON形式で出力し、サブエージェントを終了
+- **判定不能（特徴が不明確）**: `document_type: "other"`, `confidence: "low"` として出力し、サブエージェントを終了
+- **いずれの場合も**: 呼び出し元（base_workflow.md）に自動的に戻り、次のPDFまたは次のステップに進む
+
+エラー発生時も、ユーザーの追加入力を待つ必要はありません。JSON出力後、自動的に処理を完了してください。
