@@ -298,6 +298,135 @@ TASK_ID_3=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "file
 grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
 ```
 
+**Image Extraction and Removal (Critical for Large Files):**
+
+**Problem:** docling embeds images as base64-encoded data URLs in Markdown, causing file sizes to exceed 256KB and breaking subsequent processing.
+
+**Solution:** Extract images to separate files immediately after conversion and remove them from Markdown.
+
+```bash
+# 1. Extract base64 images and remove from Markdown
+python3 << 'EOF'
+import re
+import base64
+import os
+import sys
+
+# Input/output paths
+md_file = '/tmp/document.md'
+output_md_file = '/tmp/document.md'
+
+# Create images directory based on PDF filename
+pdf_basename = os.path.basename('/tmp/document.pdf').replace('.pdf', '')
+images_dir = f'/tmp/{pdf_basename}_images'
+os.makedirs(images_dir, exist_ok=True)
+
+# Read Markdown content
+with open(md_file, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+# Pattern to match base64-encoded images in Markdown
+# Matches: ![alt](data:image/png;base64,iVBORw0KG...)
+image_pattern = r'!\[([^\]]*)\]\(data:image/([^;]+);base64,([^)]+)\)'
+
+image_count = 0
+page_num = 1
+
+def extract_image(match):
+    global image_count, page_num
+
+    alt_text = match.group(1)
+    image_format = match.group(2)  # png, jpeg, etc.
+    base64_data = match.group(3)
+
+    # Determine page number from preceding content
+    # This is a simple heuristic - adjust based on actual docling output format
+    preceding_text = content[:match.start()]
+    page_markers = re.findall(r'##\s*Page\s*(\d+)', preceding_text, re.IGNORECASE)
+    if page_markers:
+        page_num = int(page_markers[-1])
+
+    # Generate filename
+    image_count += 1
+    filename = f'page_{page_num:03d}_image_{image_count:03d}.{image_format}'
+    filepath = os.path.join(images_dir, filename)
+
+    # Decode and save image
+    try:
+        image_data = base64.b64decode(base64_data)
+        with open(filepath, 'wb') as img_file:
+            img_file.write(image_data)
+        print(f'Extracted: {filename} ({len(image_data)} bytes)', file=sys.stderr)
+
+        # Return empty string to remove image from Markdown
+        # Future enhancement: could return file path reference
+        return ''
+    except Exception as e:
+        print(f'Error extracting image: {e}', file=sys.stderr)
+        return match.group(0)  # Keep original if extraction fails
+
+# Replace all base64 images with extracted file references (or empty string)
+cleaned_content = re.sub(image_pattern, extract_image, content)
+
+# Write cleaned Markdown
+with open(output_md_file, 'w', encoding='utf-8') as f:
+    f.write(cleaned_content)
+
+print(f'Total images extracted: {image_count}', file=sys.stderr)
+print(f'Images saved to: {images_dir}', file=sys.stderr)
+print(f'Cleaned Markdown written to: {output_md_file}', file=sys.stderr)
+EOF
+
+# 2. Verify the cleaned Markdown file size
+ls -lh /tmp/document.md
+echo "Images directory:"
+ls -lh /tmp/document_images/ 2>/dev/null || echo "No images extracted"
+
+# 3. Now the Markdown file is safe to read with Read tool
+# Images are preserved in /tmp/document_images/ for future use
+```
+
+**Processing for Multiple PDFs:**
+
+For each PDF converted with docling:
+
+```bash
+# Example with multiple files
+for pdf_file in /tmp/shiryou1.pdf /tmp/shiryou2.pdf /tmp/shiryou3.pdf; do
+  basename=$(basename "$pdf_file" .pdf)
+  md_file="/tmp/${basename}.md"
+
+  # Run image extraction script for each Markdown file
+  # (Adjust the script above to use variables)
+  python3 /path/to/extract_images.py "$md_file"
+done
+```
+
+**Image Directory Structure:**
+
+```
+/tmp/
+├── shiryou1.pdf
+├── shiryou1.md (cleaned, no images)
+├── shiryou1_images/
+│   ├── page_001_image_001.png
+│   ├── page_001_image_002.png
+│   ├── page_003_image_003.png
+│   └── ...
+├── shiryou2.pdf
+├── shiryou2.md (cleaned, no images)
+└── shiryou2_images/
+    ├── page_001_image_001.png
+    └── ...
+```
+
+**Future Enhancement Notes:**
+
+- Images are preserved in `/tmp/{pdf_basename}_images/` for potential future use
+- Could implement image analysis/captioning in future versions
+- Could include image references as Markdown links: `![Image](path/to/image.png)`
+- Currently images are removed entirely to optimize token usage
+
 **Usage Decision Criteria (Document Type Based):**
 
 *PowerPoint-origin PDFs → Use docling:*
@@ -362,17 +491,25 @@ grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
    - Always check for both structures when parsing
 
 4. **Markdown file too large (>256KB) for Read tool:**
-   - Use Grep to extract headings: `grep "^#{1,3}\s+" file.md`
-   - Understand document structure from headings
-   - Read only necessary sections using Read tool with offset/limit
-   - Large file size often due to base64-encoded images in Markdown
+   - **Root cause**: base64-encoded images embedded by docling
+   - **Solution**: Run image extraction script immediately after conversion (see "Image Extraction and Removal" section)
+   - This extracts images to separate files and removes them from Markdown
+   - After extraction, Markdown file size should be manageable (<100KB typically)
+   - If extraction fails, fallback to Grep: `grep "^#{1,3}\s+" file.md` to extract headings
 
-5. **Conversion fails entirely:**
+5. **Image extraction failures:**
+   - **Invalid base64 data**: Skip the problematic image, keep processing others
+   - **Write permission denied**: Check `/tmp/` directory permissions
+   - **Disk space full**: Free up space in `/tmp/` or use alternative location
+   - **No images found**: Not an error - some PDFs have no embedded images
+   - Extraction failures are non-critical; processing continues with original Markdown
+
+6. **Conversion fails entirely:**
    - Fall back to Read tool for direct PDF reading
    - Log conversion errors for debugging
    - Note in output that Markdown conversion was not available
 
-6. **Task status stuck in "pending" or "started":**
+7. **Task status stuck in "pending" or "started":**
    - Continue polling for up to 10 minutes
    - If still stuck, check docling container logs: `docker logs docling-server`
    - Consider restarting container if necessary
