@@ -5,11 +5,21 @@ allowed-tools:
   - WebFetch(domain:www.chusho.meti.go.jp)
   - Bash(curl:*)
   - Bash(python3:*)
+  - Bash(pdftotext:*)
+  - Bash(docker:*)
+  - Bash(awk:*)
+  - Bash(ssky:*)
   - Bash(mkdir:*)
   - Bash(ls:*)
-  - Bash(docker:*)
-  - Read
-  - Write
+  - Bash(grep:*)
+  - Read(path:/tmp/*)
+  - Read(path:./output/*)
+  - Write(path:/tmp/*)
+  - Write(path:./output/*)
+  - Edit(path:/tmp/*)
+  - Edit(path:./output/*)
+  - Skill(document-type-classifier)
+  - Skill(material-analyzer)
 ---
 
 # 中小企業庁 会議ページサマリー作成スキル
