@@ -17,6 +17,7 @@ This is a Claude Code skills project for generating structured summaries of Japa
 - `pagereport-cao/`: Cabinet Office (総務省) meeting pages
 - `pagereport-meti/`: Ministry of Economy, Trade and Industry (経済産業省) meeting pages
 - `pagereport-chusho/`: Small and Medium Enterprise Agency (中小企業庁) meeting pages
+- `pagereport-mhlw/`: Ministry of Health, Labour and Welfare (厚生労働省) meeting pages
 - `common/base_workflow.md`: Shared workflow specification used by all skills
   - Defines an 11-step processing pipeline from content fetching to Bluesky posting
   - Includes detailed rules for PDF prioritization, document type detection, and token optimization
@@ -112,6 +113,7 @@ The skill follows a structured 11-step workflow:
 /pagereport-cao "https://www.cao.go.jp/..."
 /pagereport-meti "https://www.meti.go.jp/..."
 /pagereport-chusho "https://www.chusho.meti.go.jp/..."
+/pagereport-mhlw "https://www.mhlw.go.jp/..."
 ```
 
 The skill automatically:
