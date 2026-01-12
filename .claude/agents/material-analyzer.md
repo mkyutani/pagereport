@@ -1,24 +1,18 @@
 ---
 name: material-analyzer
 description: 変換済み資料（Markdown/テキスト）を分析し、文書タイプ別の最適化戦略で要約を生成。pagereportスキルのステップ8で使用される内部サブエージェント
-allowed-tools:
-  - Bash(grep:*)
-  - Bash(awk:*)
-  - Bash(wc:*)
-  - Bash(python3:*)
-  - Bash(cat:*)
-  - Bash(echo:*)
-  - Read(path:/tmp/*)
-  - Write(path:/tmp/*)
-  - Grep
-  - Glob
-auto-execute: true
+tools: Bash, Read, Write, Grep, Glob
 ---
 
 # material-analyzer
 
 変換済みの資料ファイル（Markdown/テキスト）を分析し、詳細な要約を生成するサブエージェント。
 文書タイプ別の最適化戦略を適用し、トークン消費を最小限に抑えながら高品質な要約を作成します。
+
+**【重要】このサブエージェントの役割:**
+- JSON形式で分析結果を出力したら、**自動的に完了して制御を返す**
+- 出力後にユーザーの確認を待たない
+- 呼び出し元（base_workflow.md）が自動的に次のステップ（Step 9）を開始する
 
 ## 用途
 
@@ -263,13 +257,6 @@ JSON形式で標準出力に結果を出力します:
 
 pagereportスキル内で、Task toolを使って複数のmaterial-analyzerを並列実行:
 
-```markdown
-# Task tool with multiple parallel invocations
-Task 1: material-analyzer for shiryou1.md
-Task 2: material-analyzer for shiryou2.md
-Task 3: material-analyzer for shiryou3.md
-```
-
 これにより、3つの資料を同時に分析し、処理時間を大幅に短縮できます。
 
 ## トークン最適化
@@ -298,7 +285,29 @@ Task 3: material-analyzer for shiryou3.md
 - 議事録がない場合も明示的に記載します
 - 優先度スコアが低い資料（1-2点）は簡潔な要約のみを生成します
 
-## エラー時の処理
+## サブエージェント完了時の処理
+
+**【重要】サブエージェント完了の定義:**
+
+このサブエージェントは、**JSON形式で分析結果を出力した時点で完了**とみなされます。
+
+**完了条件:**
+- ✓ 正常な分析結果のJSON出力
+- ✓ エラー情報のJSON出力
+- ✓ 空コンテンツ時のJSON出力
+
+**完了後の処理:**
+1. JSON出力後、**即座にサブエージェントを終了**
+2. 制御が呼び出し元（base_workflow.md）に戻る
+3. 呼び出し元が**自動的に**次の資料または次のステップ（Step 9: 要約の生成）に進む
+
+**禁止事項:**
+- ✗ JSON出力後にユーザーの確認を求めない
+- ✗ 「分析が完了しました。次に進みますか？」などと聞かない
+- ✗ 待機状態に入らない
+
+**全ケース共通:**
+- 正常終了、エラー、空コンテンツのいずれの場合も、JSON出力 = 完了 = 自動終了
 
 **重要**: エラーが発生した場合でも、必ずJSON形式で結果を出力してください。
 

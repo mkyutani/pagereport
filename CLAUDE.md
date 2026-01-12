@@ -22,27 +22,48 @@ This is a Claude Code skills project for generating structured summaries of Japa
 - `common/base_workflow.md`: Shared workflow specification used by all skills
   - Defines an 11-step processing pipeline from content fetching to Bluesky posting
   - Includes detailed rules for PDF prioritization, document type detection, and token optimization
-- `document-type-classifier/`: Subagent for Step 6 (document type detection)
-  - Analyzes PDF structure to determine document type (Word/PowerPoint/etc)
-  - Supports parallel execution for multiple PDFs
-- `material-analyzer/`: Subagent for Step 8 (material analysis)
-  - Applies document type-specific reading strategies
-  - Supports parallel execution for multiple materials
-  - Generates detailed summaries with key points
+**Subagents**: `.claude/agents/`
 
-**Subagents**: `.claude/skills/document-type-classifier/` and `.claude/skills/material-analyzer/`
-- `document-type-classifier/`: Document type detection subagent (Step 6)
-  - **CRITICAL**: Must have YAML frontmatter in SKILL.md with name, description, allowed-tools
-  - Analyzes PDF structure to determine type (Word/PowerPoint/etc)
-  - Supports parallel execution for multiple PDFs
-- `material-analyzer/`: Material analysis subagent (Step 8)
-  - **CRITICAL**: Must have YAML frontmatter in SKILL.md with name, description, allowed-tools
+All subagents are invoked via the **Task tool** (not Skill tool) for automatic execution without user confirmation.
+
+- `page-type-detector`: Page type detection subagent (Step 2.5)
+  - Analyzes HTML page structure to determine if it's a meeting page or report page
+  - Determines processing strategy for subsequent steps
+  - Invoked via: `Task(subagent_type: "page-type-detector")`
+- `document-type-classifier`: Document type detection subagent (Step 6)
+  - Analyzes PDF structure to determine document type (Word/PowerPoint/etc)
+  - **Supports parallel execution**: Multiple PDFs classified simultaneously in a single message with multiple Task tool calls
+  - Invoked via: `Task(subagent_type: "document-type-classifier")`
+- `material-analyzer`: Material analysis subagent (Step 8)
   - Applies document type-specific reading strategies
-  - Supports parallel execution for multiple materials
+  - **Supports parallel execution**: Multiple materials analyzed simultaneously in a single message with multiple Task tool calls
   - Generates detailed summaries with key points
+  - Invoked via: `Task(subagent_type: "material-analyzer")`
 - **If subagents are unavailable**: Processing will terminate with error message
-  - Workflow checks subagent availability before Step 6 and Step 8
+  - Workflow checks subagent availability before Steps 2.5, 6, and 8
   - Fallback to direct processing is NOT supported (to prioritize system configuration fixes)
+
+**Shell Scripts**: `.claude/skills/common/scripts/`
+
+All complex Bash operations are externalized to shell scripts for better maintainability and automatic execution:
+
+- `download_pdf.sh`: Download PDF from URL (normal sites)
+- `download_pdf_with_useragent.sh`: Download PDF with browser User-Agent (METI/Chusho/MHLW/FSA)
+- `convert_pdftotext.sh`: Convert PDF to text using pdftotext
+- `convert_pdftotext_fallback.sh`: Convert PDF to text using PyPDF2 (fallback)
+- `docling_convert_async.sh`: Start docling async conversion, return TASK_ID
+- `docling_poll_status.sh`: Poll docling conversion status until complete
+- `docling_get_result.sh`: Retrieve docling conversion result as Markdown
+- `extract_images_from_md.sh`: Extract base64 images from Markdown to separate files
+- `extract_important_pages.sh`: Extract important pages from full Markdown
+- `check_tool.sh`: Check if a tool is available
+
+**Benefits**:
+- All scripts are pre-authorized via `Bash(bash:*)` permission
+- No user confirmation required during execution
+- Complex multi-line operations (loops, heredocs, pipes) work seamlessly
+- Easy to test and maintain independently
+- Consistent error handling across all workflows
 
 **Commands**: `.claude/commands/`
 - `bluesky-post.md`: Standalone command to extract abstract from report and post to Bluesky
@@ -50,8 +71,13 @@ This is a Claude Code skills project for generating structured summaries of Japa
   - Automatically called by skills in Step 11
 
 **Permissions**: `.claude/settings.local.json`
-- Pre-authorized tools: `Bash(curl:*)`, `Bash(mkdir:*)`, `Bash(ls:*)`, `Bash(python3:*)`, `WebFetch(domain:github.com)`, `Read(path:/tmp/*)`, `Write(path:/tmp/*)`, `Edit(path:/tmp/*)`
-- These permissions allow the skill to operate without manual approval for common operations
+- **Pre-authorized shell script execution**: `Bash(bash:*)`, `Bash(sh:*)` - enables all scripts in `.claude/skills/common/scripts/`
+- Pre-authorized Bash commands: `curl`, `mkdir`, `ls`, `grep`, `wc`, `cat`, `head`, `tail`, `which`, `command`, `sleep`, `python3`, `pdftotext`, `docker`, `awk`, `ssky`, `chmod`, `wget`
+- Pre-authorized WebFetch domains: `github.com`, `*.go.jp`
+- Pre-authorized file operations: `Read/Write/Edit(path:/tmp/*)`, `Read/Write/Edit(path:./output/*)`
+- Pre-authorized skills: All pagereport skills, bluesky-post, and all subagents
+- Pre-authorized Task tool subagents: `document-type-classifier`, `material-analyzer`, `page-type-detector`
+- These permissions enable fully automatic workflow execution without user confirmation prompts
 
 ### Processing Pipeline
 
@@ -72,10 +98,16 @@ The skill follows a structured 11-step workflow:
 ### Key Design Principles
 
 **Parallel Processing**:
-- Document type detection (Step 6) runs in parallel for multiple PDFs
-- Material analysis (Step 8) runs in parallel for multiple materials
-- Reduces overall processing time by 30-50% when handling 3+ materials
-- Each subagent operates independently with its own context
+- **Task tool enables automatic parallel execution** without user confirmation
+- **Document type detection (Step 6)**: Multiple PDFs classified in parallel
+  - Implementation: Single message with multiple `Task(subagent_type: "document-type-classifier")` calls
+  - Each PDF gets its own independent subagent
+- **Material analysis (Step 8)**: Multiple materials analyzed in parallel
+  - Implementation: Single message with multiple `Task(subagent_type: "material-analyzer")` calls
+  - Each material gets its own independent subagent
+- **Performance improvement**: Reduces overall processing time by 30-50% when handling 3+ materials
+- **Independence**: Each subagent operates independently with its own context
+- **Automatic continuation**: When all parallel subagents complete, workflow automatically proceeds to next step without user intervention
 
 **Token Optimization**:
 - Convert PDFs to Markdown with docling container when beneficial (>50 pages, complex layouts)
@@ -534,27 +566,31 @@ done
 ```
 .
 ├── .claude/
+│   ├── agents/
+│   │   ├── page-type-detector.md       # Subagent for Step 2.5 (page type detection)
+│   │   ├── document-type-classifier.md # Subagent for Step 6 (document type detection)
+│   │   └── material-analyzer.md        # Subagent for Step 8 (material analysis)
 │   ├── commands/
-│   │   └── bluesky-post.md          # Bluesky posting command
+│   │   └── bluesky-post.md             # Bluesky posting command
 │   ├── skills/
-│   │   ├── pagereport-cas/          # Internal Cabinet Office skill
+│   │   ├── pagereport-cas/             # Internal Cabinet Office skill
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-cao/          # Cabinet Office skill
+│   │   ├── pagereport-cao/             # Cabinet Office skill
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-meti/         # METI skill
+│   │   ├── pagereport-meti/            # METI skill
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-chusho/       # Small and Medium Enterprise Agency skill
+│   │   ├── pagereport-chusho/          # Small and Medium Enterprise Agency skill
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-mhlw/         # Ministry of Health, Labour and Welfare skill
+│   │   ├── pagereport-mhlw/            # Ministry of Health, Labour and Welfare skill
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-fsa/          # Financial Services Agency skill
+│   │   ├── pagereport-fsa/             # Financial Services Agency skill
 │   │   │   └── SKILL.md
 │   │   └── common/
-│   │       └── base_workflow.md     # Shared workflow (11 steps)
-│   └── settings.local.json          # Tool permissions
+│   │       └── base_workflow.md        # Shared workflow (11 steps)
+│   └── settings.local.json             # Tool permissions
 ├── output/
 │   └── {meeting_name}_{round}_{date}_report.md
-└── CLAUDE.md                        # This file
+└── CLAUDE.md                           # This file
 ```
 
 ### Output Files

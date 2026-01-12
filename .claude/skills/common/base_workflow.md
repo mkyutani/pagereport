@@ -74,6 +74,29 @@ HTMLまたはPDFから以下を抽出:
 
 会議名、日付、回数が取得できない場合は、ユーザーに確認する。
 
+## ステップ2.5: ページタイプ判定（サブエージェント呼び出し）
+
+**重要**: このステップで`page-type-detector`サブエージェントをTaskツールで呼び出し、ページタイプを判定します。
+
+Taskツールで自動実行（ユーザー確認なし）:
+- subagent_type: "page-type-detector"
+- prompt: HTMLコンテンツ、ページタイトル、PDF数を含む詳細なプロンプト
+- 結果: JSON形式で判定結果（MEETING/REPORT）が返される
+
+**【重要】サブエージェント完了後の自動継続:**
+
+サブエージェントがJSON形式で判定結果を出力したら、それはサブエージェント処理の**完了を意味します**。
+
+**即座に実行すべきこと:**
+1. ✓ 判定結果（MEETING/REPORT）を受け取る
+2. ✓ **ユーザーの入力や確認を一切待たず、直ちにステップ3（会議概要の作成）に進む**
+
+**禁止事項:**
+- ✗ 判定結果だけ表示して停止しない
+- ✗ ユーザーの応答を待たない
+
+---
+
 ## ステップ3: 会議概要の作成
 
 ### パターンA: HTMLに概要が記載されている場合
@@ -136,13 +159,15 @@ HTMLから全PDFリンクを抽出し、相対パスを絶対URLに変換。
 
 **リモートPDFの取得方法:**
 
-選択した高優先度PDFを curl でダウンロード:
+選択した高優先度PDFをスクリプトでダウンロード:
 
 ```bash
-# 各PDFをダウンロード
-curl -o /tmp/shidai.pdf "https://example.com/shidai.pdf"
-curl -o /tmp/shiryou1-1.pdf "https://example.com/shiryou1-1.pdf"
-# ... 他の優先度の高いPDFも同様に
+# 通常のダウンロード（CAS, CAOなど）
+bash .claude/skills/common/scripts/download_pdf.sh "https://example.com/shidai.pdf" "/tmp/shidai.pdf"
+bash .claude/skills/common/scripts/download_pdf.sh "https://example.com/shiryou1-1.pdf" "/tmp/shiryou1-1.pdf"
+
+# User-Agent必須のサイト（METI, Chusho, MHLW, FSAなど）
+bash .claude/skills/common/scripts/download_pdf_with_useragent.sh "https://www.meti.go.jp/doc.pdf" "/tmp/doc.pdf"
 ```
 
 **ポイント:**
@@ -150,6 +175,7 @@ curl -o /tmp/shiryou1-1.pdf "https://example.com/shiryou1-1.pdf"
 - ファイル名は元のファイル名を維持
 - ダウンロード失敗時はエラーをログして次へ進む
 - 並列ダウンロードは避ける（順次実行）
+- METI/Chusho等のサイトは必ず `download_pdf_with_useragent.sh` を使用
 
 ## ステップ6: 文書タイプ判定
 
@@ -190,15 +216,15 @@ curl -o /tmp/shiryou1-1.pdf "https://example.com/shiryou1-1.pdf"
 
 **複数PDFの並列判定により処理時間を短縮:**
 
-```bash
-# Task tool で複数のdocument-type-classifierを並列実行
-# 各PDFについて独立したサブエージェントを起動
+**重要:** 1つのメッセージで複数のTaskツールを呼び出して並列実行します（ユーザー確認なし）。
 
-Task 1: /document-type-classifier "/tmp/shiryou1.pdf"
-Task 2: /document-type-classifier "/tmp/shiryou2.pdf"
-Task 3: /document-type-classifier "/tmp/shiryou3.pdf"
-# ... 高優先度PDFの数だけ並列実行
-```
+各PDFについて:
+- subagent_type: "document-type-classifier"
+- prompt: PDFファイルパス（例: "/tmp/shiryou1.pdf"）を含む判定依頼
+- 並列実行: 複数のTaskツール呼び出しを1つのメッセージに含める
+- 結果: 各サブエージェントがJSON形式で判定結果を返す
+
+例: 3つのPDFを並列判定する場合、1つのメッセージで3つのTaskツールを同時に呼び出す
 
 ### サブエージェントの出力形式
 
@@ -256,7 +282,29 @@ document-type-classifierの詳細な判定基準とエラーハンドリング�
 
 ### 次のステップへ
 
-**重要**: 全てのサブエージェントが完了したら、判定結果を記録し、**直ちにステップ7（PDF→テキスト/Markdown変換）に進んでください**。ユーザーの追加入力を待つ必要はありません。
+**【重要】サブエージェント完了後の自動継続:**
+
+サブエージェントがJSON形式で結果を出力したら、それはサブエージェント処理の**完了を意味します**。
+
+**即座に実行すべきこと:**
+1. ✓ 各サブエージェントの判定結果をJSON形式で受け取る
+2. ✓ 判定結果を内部的に記録する（メモリまたは変数に保存）
+3. ✓ **ユーザーの入力や確認を一切待たず、直ちにステップ7（PDF→テキスト/Markdown変換）を開始する**
+
+**禁止事項:**
+- ✗ 「判定結果を確認してください」などのメッセージを出さない
+- ✗ ユーザーの応答を待たない
+- ✗ 中間報告だけして停止しない
+
+**正しい処理フロー:**
+```
+サブエージェント1: JSON出力 → 記録
+サブエージェント2: JSON出力 → 記録
+サブエージェント3: JSON出力 → 記録
+↓ 全てのサブエージェント完了（自動判断）
+↓ 【ユーザー確認なし】
+↓ 即座にステップ7を開始
+```
 
 **エラー処理**:
 - サブエージェントがエラーを返した場合（`error`フィールドが存在）、そのPDFをスキップして次のPDFまたはステップ7に進む
@@ -289,14 +337,9 @@ document-type-classifierの詳細な判定基準とエラーハンドリング�
 
 ```bash
 # 各PDFをテキスト化（高速、5-30秒/ファイル）
-pdftotext /tmp/shiryou1.pdf /tmp/shiryou1.txt
-pdftotext /tmp/shiryou2.pdf /tmp/shiryou2.txt
-pdftotext /tmp/shiryou3.pdf /tmp/shiryou3.txt
-
-# 変換結果の確認
-for file in /tmp/shiryou*.txt; do
-  echo "$file: $(wc -l < "$file") lines"
-done
+bash .claude/skills/common/scripts/convert_pdftotext.sh "/tmp/shiryou1.pdf" "/tmp/shiryou1.txt"
+bash .claude/skills/common/scripts/convert_pdftotext.sh "/tmp/shiryou2.pdf" "/tmp/shiryou2.txt"
+bash .claude/skills/common/scripts/convert_pdftotext.sh "/tmp/shiryou3.pdf" "/tmp/shiryou3.txt"
 ```
 
 **処理時間の目安:**
@@ -313,20 +356,10 @@ done
 **フォールバック（pdftotextが使えない場合）:**
 
 ```bash
-# PyPdf2を試す
-python3 << 'EOF'
-from PyPDF2 import PdfReader
+# PyPDF2を使ったフォールバック
+bash .claude/skills/common/scripts/convert_pdftotext_fallback.sh "/tmp/document.pdf" "/tmp/document.txt"
 
-reader = PdfReader('/tmp/document.pdf')
-text_content = []
-for page in reader.pages:
-    text_content.append(page.extract_text())
-
-with open('/tmp/document.txt', 'w', encoding='utf-8') as f:
-    f.write('\n'.join(text_content))
-EOF
-
-# PyPdf2も使えない場合、Read toolで直接読み取り
+# PyPDF2も使えない場合、Read toolで直接読み取り
 ```
 
 ---
@@ -413,146 +446,22 @@ docker ps | grep docling
 
 ```bash
 # 1. PDF全体を非同期で変換（並列処理のため、複数PDFを同時投入可能）
-TASK_ID=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
-  -F "files=@/tmp/shiryou1.pdf" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
+TASK_ID=$(bash .claude/skills/common/scripts/docling_convert_async.sh "/tmp/shiryou1.pdf")
 
 # 2. 変換完了を待機（ポーリング、15秒ごとにチェック）
-while true; do
-  STATUS=$(curl -s "http://localhost:5001/v1/status/poll/$TASK_ID" | \
-    python3 -c "import json, sys; print(json.load(sys.stdin)['task_status'])")
-  echo "Conversion status: $STATUS"
-  if [ "$STATUS" = "success" ]; then
-    break
-  elif [ "$STATUS" = "failure" ]; then
-    echo "Conversion failed"
-    exit 1
-  fi
-  sleep 15
-done
+bash .claude/skills/common/scripts/docling_poll_status.sh "$TASK_ID"
 
 # 3. 結果を取得してMarkdownファイルに保存
-curl -s "http://localhost:5001/v1/result/$TASK_ID" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
-  > /tmp/shiryou1_full.md
+bash .claude/skills/common/scripts/docling_get_result.sh "$TASK_ID" "/tmp/shiryou1_full.md"
 
 # 3.5. 画像を別ファイルに抽出してMarkdownから削除（重要！）
 # doclingは画像をbase64エンコードで埋め込むため、ファイルサイズが巨大になる
 # 後続処理のために画像を抽出して別ファイルに保存し、Markdownからは削除する
-python3 << 'EOF'
-import re
-import base64
-import os
-import sys
+bash .claude/skills/common/scripts/extract_images_from_md.sh "/tmp/shiryou1_full.md"
 
-# Input/output paths
-md_file = '/tmp/shiryou1_full.md'
-output_md_file = '/tmp/shiryou1_full.md'  # Overwrite with cleaned version
-
-# Create images directory
-pdf_basename = 'shiryou1'  # Adjust based on actual filename
-images_dir = f'/tmp/{pdf_basename}_images'
-os.makedirs(images_dir, exist_ok=True)
-
-# Read Markdown content
-try:
-    with open(md_file, 'r', encoding='utf-8') as f:
-        content = f.read()
-except Exception as e:
-    print(f'Error reading Markdown file: {e}', file=sys.stderr)
-    sys.exit(1)
-
-# Pattern to match base64-encoded images in Markdown
-# Matches: ![alt](data:image/png;base64,iVBORw0KG...)
-image_pattern = r'!\[([^\]]*)\]\(data:image/([^;]+);base64,([^)]+)\)'
-
-image_count = 0
-page_num = 1
-
-def extract_image(match):
-    global image_count, page_num
-
-    alt_text = match.group(1)
-    image_format = match.group(2)  # png, jpeg, etc.
-    base64_data = match.group(3)
-
-    # Determine page number from preceding content
-    preceding_text = content[:match.start()]
-    page_markers = re.findall(r'##\s*Page\s*(\d+)', preceding_text, re.IGNORECASE)
-    if page_markers:
-        page_num = int(page_markers[-1])
-
-    # Generate filename
-    image_count += 1
-    filename = f'page_{page_num:03d}_image_{image_count:03d}.{image_format}'
-    filepath = os.path.join(images_dir, filename)
-
-    # Decode and save image
-    try:
-        image_data = base64.b64decode(base64_data)
-        with open(filepath, 'wb') as img_file:
-            img_file.write(image_data)
-        print(f'Extracted: {filename} ({len(image_data)} bytes)', file=sys.stderr)
-        return ''  # Remove image from Markdown
-    except Exception as e:
-        print(f'Error extracting image: {e}', file=sys.stderr)
-        return match.group(0)  # Keep original if extraction fails
-
-# Replace all base64 images
-cleaned_content = re.sub(image_pattern, extract_image, content)
-
-# Write cleaned Markdown
-try:
-    with open(output_md_file, 'w', encoding='utf-8') as f:
-        f.write(cleaned_content)
-    print(f'Total images extracted: {image_count}', file=sys.stderr)
-    print(f'Images saved to: {images_dir}', file=sys.stderr)
-    print(f'Cleaned Markdown size: {len(cleaned_content)} bytes (was {len(content)} bytes)', file=sys.stderr)
-except Exception as e:
-    print(f'Error writing cleaned Markdown: {e}', file=sys.stderr)
-    sys.exit(1)
-EOF
-
-# Verify the result
-echo "Cleaned Markdown file:"
-ls -lh /tmp/shiryou1_full.md
-echo "Images directory:"
-ls -lh /tmp/shiryou1_images/ 2>/dev/null || echo "No images found"
-
-# 4. 重要ページのみ抽出（Pythonスクリプト）
-python3 << 'EOF'
-import re
-
-# Markdownファイルを読み込み
-with open('/tmp/shiryou1_full.md', 'r') as f:
-    content = f.read()
-
-# 重要ページ番号（7-2で特定したもの）
-important_pages = [3, 4, 5, 6, 7, 10, 12, 15]
-
-# doclingの出力形式に応じてページ区切りを検出
-# 一般的な形式: "## Page N" または "<!-- page N -->"
-pages = re.split(r'(?:##\s*Page\s*(\d+)|<!--\s*page\s*(\d+)\s*-->)', content, flags=re.IGNORECASE)
-
-# 重要ページのみ抽出
-important_content = []
-for i in range(1, len(pages), 3):  # (区切り, ページ番号1, ページ番号2, コンテンツ) のパターン
-    page_num_str = pages[i] or pages[i+1]  # どちらかにページ番号が入る
-    if page_num_str:
-        page_num = int(page_num_str)
-        page_content = pages[i+2] if i+2 < len(pages) else ''
-        if page_num in important_pages:
-            important_content.append(f'## Page {page_num}\n{page_content}')
-
-# 重要ページのみのMarkdownファイルを保存
-with open('/tmp/shiryou1.md', 'w') as f:
-    f.write('\n\n---\n\n'.join(important_content))
-
-print(f"Extracted {len(important_content)} important pages from {len(pages)//3} total pages")
-EOF
-
-# 5. 抽出結果の確認
-wc -l /tmp/shiryou1.md
+# 4. 重要ページのみ抽出
+# 重要ページ番号（7-2で特定したもの）: 例 3,4,5,6,7,10,12,15
+bash .claude/skills/common/scripts/extract_important_pages.sh "/tmp/shiryou1_full.md" "/tmp/shiryou1.md" "3,4,5,6,7,10,12,15"
 ```
 
 **処理時間の目安:**
@@ -606,33 +515,26 @@ Step 6の判定結果に基づく:
 
 ### エラーハンドリング
 
+**ツールチェック:**
 ```bash
-# 7-1: pdftotext が利用可能か確認
-if ! command -v pdftotext &> /dev/null; then
-    echo "pdftotext not available, trying PyPdf2..."
+# pdftotext が利用可能か確認
+bash .claude/skills/common/scripts/check_tool.sh pdftotext
+# 終了コード: 0=利用可能, 1=利用不可
 
-    # PyPdf2 フォールバック
-    if python3 -c "import PyPDF2" &> /dev/null 2>&1; then
-        echo "Using PyPdf2 for text extraction"
-        # PyPdf2で処理（上記のPythonスクリプト使用）
-    else
-        echo "PyPdf2 not available, using Read tool instead"
-        # Read toolで直接PDFを読む（Step 8へ）
-    fi
-fi
+# pdftotextが使えない場合、PyPDF2フォールバックを試す
+bash .claude/skills/common/scripts/convert_pdftotext_fallback.sh "/tmp/document.pdf" "/tmp/document.txt"
 
-# 7-3: PowerPoint PDF用 - docling container確認
-if ! docker ps | grep -q docling-server; then
-    echo "docling container not running, using pdftotext output instead"
-    # pdftotextの全文テキストをそのまま使用（Step 8へ）
-fi
-
-# 7-3: docling変換失敗時
-if [ ! -s /tmp/shiryou1.md ]; then
-    echo "docling conversion failed, using pdftotext output instead"
-    # pdftotextの全文テキストをそのまま使用（Step 8へ）
-fi
+# PyPDF2も使えない場合、Read toolで直接PDFを読む
 ```
+
+**docling変換のエラーハンドリング:**
+- convert_pdftotext.sh: pdftotextが見つからない場合、エラーで終了
+- convert_pdftotext_fallback.sh: PyPDF2がない場合、エラーで終了
+- docling_convert_async.sh: TASK_IDが取得できない場合、エラーで終了
+- docling_poll_status.sh: 10分以内に完了しない場合、タイムアウトエラー
+- docling_get_result.sh: 結果が取得できない場合、エラーで終了
+
+これらのエラーが発生した場合は、pdftotextの全文テキストまたはRead toolで読み取ったPDFを使用してStep 8に進みます。
 
 
 ## ステップ8: 資料の読み取りと分析（トークン最適化）
@@ -674,15 +576,21 @@ fi
 
 **複数資料の並列分析により処理時間を大幅短縮:**
 
-```bash
-# Task tool で複数のmaterial-analyzerを並列実行
-# 各資料について独立したサブエージェントを起動
+**重要:** 1つのメッセージで複数のTaskツールを呼び出して並列実行します（ユーザー確認なし）。
 
-Task 1: /material-analyzer "/tmp/shiryou1.md" "powerpoint" "5" '{"title":"資料1-1","filename":"shiryou1-1.pdf","url":"https://...","page_count":45}'
-Task 2: /material-analyzer "/tmp/shiryou2.txt" "word" "4" '{"title":"資料2","filename":"shiryou2.pdf","url":"https://...","page_count":20}'
-Task 3: /material-analyzer "/tmp/shiryou3.md" "powerpoint" "4" '{"title":"資料3","filename":"shiryou3.pdf","url":"https://...","page_count":30}'
-# ... 高優先度資料の数だけ並列実行
-```
+各資料について:
+- subagent_type: "material-analyzer"
+- prompt: ファイルパス、文書タイプ、優先度スコア、メタデータJSONを含む分析依頼
+- 並列実行: 複数のTaskツール呼び出しを1つのメッセージに含める
+- 結果: 各サブエージェントがJSON形式で分析結果を返す
+
+例: 3つの資料を並列分析する場合、1つのメッセージで3つのTaskツールを同時に呼び出す
+
+各サブエージェントへの入力例:
+- ファイルパス: "/tmp/shiryou1.md"
+- 文書タイプ: "powerpoint"
+- 優先度スコア: "5"
+- メタデータJSON: '{"title":"資料1-1","filename":"shiryou1-1.pdf","url":"https://...","page_count":45}'
 
 ### サブエージェントの入力
 
@@ -772,7 +680,29 @@ material-analyzerの詳細な読み取り戦略、セクション優先度、エ
 
 ### 次のステップへ
 
-**重要**: 全てのサブエージェントが完了したら、分析結果を統合し、**直ちにステップ9（要約の生成）に進んでください**。ユーザーの追加入力を待つ必要はありません。
+**【重要】サブエージェント完了後の自動継続:**
+
+サブエージェントがJSON形式で分析結果を出力したら、それはサブエージェント処理の**完了を意味します**。
+
+**即座に実行すべきこと:**
+1. ✓ 各サブエージェントの分析結果をJSON形式で受け取る
+2. ✓ 分析結果を統合して内部的に記録する
+3. ✓ **ユーザーの入力や確認を一切待たず、直ちにステップ9（要約の生成）を開始する**
+
+**禁止事項:**
+- ✗ 「分析結果を確認してください」などのメッセージを出さない
+- ✗ ユーザーの応答を待たない
+- ✗ 中間報告だけして停止しない
+
+**正しい処理フロー:**
+```
+material-analyzer 1: JSON出力 → 記録
+material-analyzer 2: JSON出力 → 記録
+material-analyzer 3: JSON出力 → 記録
+↓ 全てのサブエージェント完了（自動判断）
+↓ 【ユーザー確認なし】
+↓ 即座にステップ9を開始（アブストラクト生成）
+```
 
 **エラー処理**:
 - サブエージェントがエラーを返した場合（`error`フィールドが存在）、その資料をスキップして次の資料または次のステップに進む
@@ -937,12 +867,24 @@ output/
 
 ### スキルの使用
 
-このステップでは、[bluesky-postスキル](../bluesky-post/SKILL.md)を使用します。
+**【重要】必ず専用スクリプトを使用してください:**
+
+このステップでは、[bluesky-postスキル](../bluesky-post/SKILL.md)の専用スクリプトを**必ず**使用します。
 
 ```bash
-# 生成されたレポートファイルを引数に指定して投稿スクリプトを実行
+# 【必須】生成されたレポートファイルを引数に指定して専用スクリプトを実行
 bash .claude/skills/bluesky-post/post.sh "./output/{会議名}_{回数}_{日付}_report.md"
 ```
+
+**禁止事項:**
+- ✗ awkやcatを直接使ってアブストラクトを抽出しない
+- ✗ ssky postを直接呼び出さない
+- ✗ 独自のスクリプトを記述しない
+
+**理由:**
+- 専用スクリプトにはエラーハンドリング、ログイン確認、抽出ロジックが統合されている
+- コードフェンス内のテキスト抽出は複雑で、awkの誤用によりアブストラクトが空になる可能性がある
+- すべてのpagereportスキルで統一された動作を保証する
 
 ### 処理フロー
 
