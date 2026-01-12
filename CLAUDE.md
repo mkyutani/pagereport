@@ -65,10 +65,11 @@ All complex Bash operations are externalized to shell scripts for better maintai
 - Easy to test and maintain independently
 - Consistent error handling across all workflows
 
-**Commands**: `.claude/commands/`
-- `bluesky-post.md`: Standalone command to extract abstract from report and post to Bluesky
-  - Can be invoked manually: `/bluesky-post <report_file_path>`
-  - Automatically called by skills in Step 11
+**Bluesky Post Skill**: `.claude/skills/bluesky-post/`
+- Auto-execute skill (`auto-execute: true`) for posting abstracts to Bluesky
+- Can be invoked manually: `/bluesky-post <report_file_path>`
+- Automatically called by pagereport skills in Step 11
+- Implementation: `post.sh` shell script for abstract extraction and posting
 
 **Permissions**: `.claude/settings.local.json`
 - **Pre-authorized shell script execution**: `Bash(bash:*)`, `Bash(sh:*)` - enables all scripts in `.claude/skills/common/scripts/`
@@ -568,10 +569,8 @@ done
 ├── .claude/
 │   ├── agents/
 │   │   ├── page-type-detector.md       # Subagent for Step 2.5 (page type detection)
-│   │   ├── document-type-classifier.md # Subagent for Step 6 (document type detection)
-│   │   └── material-analyzer.md        # Subagent for Step 8 (material analysis)
-│   ├── commands/
-│   │   └── bluesky-post.md             # Bluesky posting command
+│   │   ├── document-type-classifier.md # Subagent for Step 6 (document type detection, parallel)
+│   │   └── material-analyzer.md        # Subagent for Step 8 (material analysis, parallel)
 │   ├── skills/
 │   │   ├── pagereport-cas/             # Internal Cabinet Office skill
 │   │   │   └── SKILL.md
@@ -585,8 +584,22 @@ done
 │   │   │   └── SKILL.md
 │   │   ├── pagereport-fsa/             # Financial Services Agency skill
 │   │   │   └── SKILL.md
+│   │   ├── bluesky-post/               # Bluesky posting skill (auto-execute: true)
+│   │   │   ├── SKILL.md                # Invokable as /bluesky-post command
+│   │   │   └── post.sh                 # Shell script for abstract extraction and posting
 │   │   └── common/
-│   │       └── base_workflow.md        # Shared workflow (11 steps)
+│   │       ├── base_workflow.md        # Shared workflow (11 steps)
+│   │       └── scripts/                # Pre-authorized shell scripts (10 files)
+│   │           ├── download_pdf.sh
+│   │           ├── download_pdf_with_useragent.sh
+│   │           ├── convert_pdftotext.sh
+│   │           ├── convert_pdftotext_fallback.sh
+│   │           ├── docling_convert_async.sh
+│   │           ├── docling_poll_status.sh
+│   │           ├── docling_get_result.sh
+│   │           ├── extract_images_from_md.sh
+│   │           ├── extract_important_pages.sh
+│   │           └── check_tool.sh
 │   └── settings.local.json             # Tool permissions
 ├── output/
 │   └── {meeting_name}_{round}_{date}_report.md
@@ -623,14 +636,6 @@ output/
 - Keep abstract structure strict (5 elements, 1 paragraph, 1,000 chars)
 - Test with actual government meeting pages to validate changes
 - Ensure all PDF URLs are converted to absolute paths
-
-### When Editing Commands (`.claude/commands/`)
-
-- Keep commands focused on a single responsibility
-- Document all parameters and error conditions
-- Provide usage examples
-- Include comprehensive error handling
-- Test commands independently before integration
 
 ### When Adding New Skills
 
@@ -792,8 +797,8 @@ ssky profile myself
 4. Handles long content by automatic thread splitting
 5. Gracefully skips if not logged in or if posting fails
 
-**Manual Posting (`/bluesky-post` command):**
-- Defined in `.claude/commands/bluesky-post.md`
+**Manual Posting (`/bluesky-post` skill):**
+- Defined in `.claude/skills/bluesky-post/SKILL.md` with implementation in `post.sh`
 - Can be invoked independently: `/bluesky-post <report_file_path>`
 - Useful for posting existing reports or re-posting
 

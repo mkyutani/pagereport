@@ -130,32 +130,43 @@ output/
 ```
 .
 ├── .claude/
+│   ├── agents/                      # サブエージェント（Task toolで呼び出し）
+│   │   ├── page-type-detector.md   # ページタイプ検出（Step 2.5）
+│   │   ├── document-type-classifier.md # 文書タイプ検出（Step 6、並列実行可能）
+│   │   └── material-analyzer.md    # 資料分析（Step 8、並列実行可能）
 │   ├── skills/
-│   │   ├── pagereport-cas/          # 内閣官房スキル
+│   │   ├── pagereport-cas/         # 内閣官房スキル
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-cao/          # 内閣府スキル
+│   │   ├── pagereport-cao/         # 内閣府スキル
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-meti/         # 経済産業省スキル
+│   │   ├── pagereport-meti/        # 経済産業省スキル
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-chusho/       # 中小企業庁スキル
+│   │   ├── pagereport-chusho/      # 中小企業庁スキル
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-mhlw/         # 厚生労働省スキル
+│   │   ├── pagereport-mhlw/        # 厚生労働省スキル
 │   │   │   └── SKILL.md
-│   │   ├── pagereport-fsa/          # 金融庁スキル
+│   │   ├── pagereport-fsa/         # 金融庁スキル
 │   │   │   └── SKILL.md
-│   │   ├── bluesky-post/            # Bluesky投稿スキル
-│   │   │   ├── SKILL.md
-│   │   │   └── post.sh
-│   │   ├── document-type-classifier/ # 文書タイプ検出サブエージェント
-│   │   │   └── SKILL.md
-│   │   ├── material-analyzer/       # 資料分析サブエージェント
-│   │   │   └── SKILL.md
+│   │   ├── bluesky-post/           # Bluesky投稿スキル（auto-execute: true）
+│   │   │   ├── SKILL.md            # /bluesky-post コマンドとして実行可能
+│   │   │   └── post.sh             # 投稿用シェルスクリプト
 │   │   └── common/
-│   │       └── base_workflow.md     # 共通ワークフロー（11ステップ）
-│   └── settings.local.json          # 権限設定
-├── CLAUDE.md                        # Claude Code向けガイダンス（詳細仕様）
-├── README.md                        # このファイル
-└── output/                          # 生成されたレポートファイル（.gitignoreで除外）
+│   │       ├── base_workflow.md    # 共通ワークフロー（11ステップ）
+│   │       └── scripts/            # 自動実行用シェルスクリプト（10ファイル）
+│   │           ├── download_pdf.sh
+│   │           ├── download_pdf_with_useragent.sh
+│   │           ├── convert_pdftotext.sh
+│   │           ├── convert_pdftotext_fallback.sh
+│   │           ├── docling_convert_async.sh
+│   │           ├── docling_poll_status.sh
+│   │           ├── docling_get_result.sh
+│   │           ├── extract_images_from_md.sh
+│   │           ├── extract_important_pages.sh
+│   │           └── check_tool.sh
+│   └── settings.local.json         # 権限設定（Bash/WebFetch/Task事前承認）
+├── CLAUDE.md                       # Claude Code向けガイダンス（詳細仕様）
+├── README.md                       # このファイル
+└── output/                         # 生成されたレポートファイル（.gitignoreで除外）
 ```
 
 ## 技術仕様
