@@ -1,8 +1,8 @@
 ---
-name: pagereport-mhlw
-description: 厚生労働省会議ページのサマリー作成（HTML+PDF対応、トークン最適化）。会議ページのURL、政府資料のPDF処理、議事録の要約作成
+name: pagereport-digital
+description: デジタル庁会議ページのサマリー作成（HTML+PDF対応、トークン最適化）。会議ページのURL、政府資料のPDF処理、議事録の要約作成
 allowed-tools:
-  - WebFetch(domain:www.mhlw.go.jp)
+  - WebFetch(domain:www.digital.go.jp)
   - Bash(bash:*)
   - Bash(sh:*)
   - Bash(curl:*)
@@ -32,21 +32,21 @@ allowed-tools:
 auto-execute: true
 ---
 
-# 厚生労働省 会議ページサマリー作成スキル
+# デジタル庁 会議ページサマリー作成スキル
 
 ## 対象ドメイン
-- www.mhlw.go.jp
+- www.digital.go.jp
 
 ## 府省庁固有の設定
 
 ### 府省庁識別子
 ```
-mhlw
+digital
 ```
 
 ### HTML取得方法（Step 1用）
 
-厚生労働省のサイトはHTMLページはWebFetchで取得可能ですが、PDFダウンロードにはUser-Agentが必須です。
+デジタル庁のサイトは標準的なHTMLページで、User-Agent制限はありません。
 
 **content-acquirerサブエージェントへの指示:**
 ```
@@ -58,14 +58,12 @@ HTML取得方法:
 
 ### PDFダウンロード方法（Step 5用）
 
-**重要: PDFダウンロードにはUser-Agent必須**
-
 **material-selectorサブエージェントへの指示:**
 ```
-ダウンロードスクリプト: .claude/skills/common/scripts/download_pdf_with_useragent.sh
+ダウンロードスクリプト: .claude/skills/common/scripts/download_pdf.sh
 
 使用方法:
-bash .claude/skills/common/scripts/download_pdf_with_useragent.sh "<URL>" "./tmp/<filename>"
+bash .claude/skills/common/scripts/download_pdf.sh "<URL>" "./tmp/<filename>"
 ```
 
 ### その他の要件
@@ -73,7 +71,7 @@ bash .claude/skills/common/scripts/download_pdf_with_useragent.sh "<URL>" "./tmp
 
 ### 実行例
 ```
-/pagereport-mhlw "https://www.mhlw.go.jp/stf/newpage_66298.html"
+/pagereport-digital "https://www.digital.go.jp/councils/ai-advisory-board/eb376409-664f-4f47-8bc9-cc95447908e4"
 ```
 
 ---
@@ -109,7 +107,7 @@ bash .claude/skills/common/scripts/download_pdf_with_useragent.sh "<URL>" "./tmp
 **Step 5 (material-selector):**
 ```
 上記の「PDFダウンロード方法」に記載された指示を含める:
-- ダウンロードスクリプト: download_pdf_with_useragent.sh (User-Agent必須)
+- ダウンロードスクリプト: download_pdf.sh
 - 使用方法の具体例を含める
 ```
 
@@ -121,3 +119,27 @@ bash .claude/skills/common/scripts/download_pdf_with_useragent.sh "<URL>" "./tmp
 3. ✗ ユーザーの確認や入力を一切待たない
 4. ✗ 「次に進みますか？」「確認してください」などと聞かない
 5. ✗ 中間報告だけして停止しない
+
+**例外: ユーザー入力が必要な場合のみ停止**
+- メタデータ（会議名・日付・回数）が抽出できない場合のみ、ユーザーに入力を求める
+
+---
+
+## 共通ワークフロー参照
+
+このスキルは `.claude/skills/common/base_workflow.md` で定義された11ステップのワークフローを実行します。
+
+**ワークフロー概要:**
+1. content-acquirer: HTML/PDF取得とPDFリンク抽出
+2. metadata-extractor: 会議メタデータ抽出
+3. overview-creator: 会議概要作成
+4. minutes-referencer: 議事録抽出
+5. material-selector: 資料の優先度判定・選択・ダウンロード
+6. document-type-classifier: 文書タイプ判定（並列実行）
+7. pdf-converter: PDF→テキスト/Markdown変換（並列実行）
+8. material-analyzer: 資料分析（並列実行）
+9. summary-generator: アブストラクトと詳細レポート生成
+10. file-writer: report.mdファイル出力
+11. bluesky-post: Bluesky投稿（自動実行）
+
+詳細は [base_workflow.md](../common/base_workflow.md) を参照してください。

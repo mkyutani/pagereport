@@ -14,6 +14,16 @@ tools: Bash, Read, Write, Grep, Glob
 - 出力後にユーザーの確認を待たない
 - 呼び出し元（base_workflow.md）が自動的に次のステップ（Step 9）を開始する
 
+**【重要】Bash toolの使用制限:**
+- **Bash toolはシェルスクリプト実行のみに使用**
+- ファイル読み取り: Bash cat/head/tail **禁止** → **Read tool** を使用
+- ファイル検索: Bash find/ls **禁止** → **Glob tool** を使用
+- コンテンツ検索: Bash grep/rg **禁止** → **Grep tool** を使用
+- ファイル編集: Bash sed/awk **禁止** → **Edit tool** を使用
+- ファイル書き込み: Bash echo/cat **禁止** → **Write tool** を使用
+- ユーザーへの通信: Bash echo **禁止** → 直接テキスト出力を使用
+- 許可される使用: `.claude/skills/common/scripts/` 配下のシェルスクリプト実行、その他システムコマンド
+
 ## 用途
 
 pagereport スキルのステップ8（資料の読み取りと分析）で使用されます。
@@ -25,7 +35,7 @@ pagereport スキルのステップ8（資料の読み取りと分析）で使�
 <file_path> <document_type> <priority_score> <metadata_json>
 ```
 
-- `file_path`: 変換済みファイルの絶対パス（例: `/tmp/shiryou1.md` または `/tmp/shiryou1.txt`）
+- `file_path`: 変換済みファイルの絶対パス（例: `./tmp/shiryou1.md` または `./tmp/shiryou1.txt`）
 - `document_type`: 文書タイプ（`word` / `powerpoint` / `agenda` / `participants` / `news` / `survey` / `other`）
 - `priority_score`: 優先度スコア（1-5、5が最高優先度）
 - `metadata_json`: メタデータのJSON文字列（エスケープ済み）
@@ -48,7 +58,7 @@ JSON形式で標準出力に結果を出力します:
 
 ```json
 {
-  "file_path": "/tmp/shiryou1.md",
+  "file_path": "./tmp/shiryou1.md",
   "title": "資料1-1 日本成長戦略の概要",
   "document_type": "powerpoint",
   "analysis": {
@@ -116,7 +126,7 @@ JSON形式で標準出力に結果を出力します:
 1. 最初の100-200行からタイトルと目次を抽出
 2. 「概要」「要旨」「まとめ」「はじめに」セクションを検索
    ```bash
-   grep -n "概要\|要旨\|まとめ\|はじめに" /tmp/document.txt
+   grep -n "概要\|要旨\|まとめ\|はじめに" ./tmp/document.txt
    ```
 3. 目次構造から本質的なセクションのみ選択
 4. Read toolのoffset/limitパラメータで該当セクションのみ読む
@@ -134,7 +144,7 @@ JSON形式で標準出力に結果を出力します:
 **処理手順:**
 1. Markdownの見出し（`#`, `##`）からスライドタイトルを抽出
    ```bash
-   grep "^#" /tmp/presentation.md
+   grep "^#" ./tmp/presentation.md
    ```
 2. 各スライドを重要度スコアリング（1-5点）:
    - キーワード出現頻度
@@ -213,7 +223,7 @@ JSON形式で標準出力に結果を出力します:
 1. **ファイルが存在しない**:
    ```json
    {
-     "file_path": "/tmp/nonexistent.md",
+     "file_path": "./tmp/nonexistent.md",
      "error": "file_not_found",
      "message": "指定されたファイルが見つかりません"
    }
@@ -222,7 +232,7 @@ JSON形式で標準出力に結果を出力します:
 2. **ファイルの読み取りに失敗**:
    ```json
    {
-     "file_path": "/tmp/corrupted.txt",
+     "file_path": "./tmp/corrupted.txt",
      "error": "read_failed",
      "message": "ファイルの読み取りに失敗しました: [エラー詳細]"
    }
@@ -231,7 +241,7 @@ JSON形式で標準出力に結果を出力します:
 3. **空コンテンツ**:
    ```json
    {
-     "file_path": "/tmp/empty.md",
+     "file_path": "./tmp/empty.md",
      "document_type": "other",
      "analysis": {
        "summary": "",
@@ -250,7 +260,7 @@ JSON形式で標準出力に結果を出力します:
 
 ```bash
 # PowerPoint資料の分析
-/material-analyzer "/tmp/shiryou1.md" "powerpoint" "5" '{"title":"資料1-1","filename":"shiryou1.pdf","url":"https://...","page_count":45}'
+/material-analyzer "./tmp/shiryou1.md" "powerpoint" "5" '{"title":"資料1-1","filename":"shiryou1.pdf","url":"https://...","page_count":45}'
 ```
 
 ### 複数資料の並列分析
