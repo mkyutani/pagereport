@@ -1,6 +1,13 @@
 # Generated output files
 output/
 
+# Local settings
+.claude/settings.local.json
+.claude/*.local.json
+*.local.json
+*.local.yaml
+*.local
+
 # Temporary files
 /tmp/
 *.tmp
@@ -26,7 +33,3 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
-
-# Claude Code local settings
-.claude/settings.local.json
-.claude/*.local.json
