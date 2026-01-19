@@ -13,15 +13,22 @@ description: Commit and pull request conventions for this repository.
 - Never commit directly to main.
 
 ## Commit messages
-Use Conventional Commits:
-```
-<type>: <subject>
-```
-Rules:
-- Use imperative mood
-- Under 72 chars
-- No trailing period
-- Types: feat, fix, docs, refactor, test, chore, perf
+Format: `{prefix}: {message}` or `{prefix}: {message} (#{issue_number})`
+
+Prefixes:
+- `feat` - New feature
+- `fix` - Bug fix
+- `docs` - Documentation changes
+- `refactor` - Code refactoring
+- `chore` - Maintenance tasks
+- `test` - Adding or modifying tests
+
+Constraints:
+- Language: English
+- Max 20 words
+- Imperative style
+- Single sentence (one line only)
+- **No author footers** - Do not add "Generated with Claude Code" or "Co-Authored-By" footers
 
 ## Pull requests
 Include: what/why, related issues, tests run, breaking changes.

@@ -32,44 +32,29 @@ refactor/<description> # Code refactoring (e.g., refactor/pdf-scoring)
 
 ## Commit Message Rules
 
-Follow **Conventional Commits** format for clear history and potential automation:
+Format: `{prefix}: {message}` or `{prefix}: {message} (#{issue_number})`
 
-```
-<type>: <subject>
+**Prefixes**:
+- `feat` - New feature
+- `fix` - Bug fix
+- `docs` - Documentation changes
+- `refactor` - Code refactoring
+- `chore` - Maintenance tasks
+- `test` - Adding or modifying tests
 
-[optional body]
-```
-
-**Format Requirements**:
-- Subject line: Use imperative mood ("add" not "added" or "adds")
-- Subject line: No period at the end
-- Subject line: Keep under 72 characters
-- Write in English
-- Body text is optional but allowed for detailed explanations
-
-**DO NOT Include**:
-- "Generated with Claude Code" footer
-- "Co-Authored-By: Claude" footer
-- Emoji or decorative elements
-
-**Types**:
-- `feat`: New feature (e.g., `feat: add PDF caching mechanism`)
-- `fix`: Bug fix (e.g., `fix: correct date parsing for Reiwa era dates`)
-- `docs`: Documentation only (e.g., `docs: update CLAUDE.md with workflow rules`)
-- `refactor`: Code refactoring without behavior change (e.g., `refactor: extract PDF scoring logic`)
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks (e.g., `chore: update dependencies`)
-- `perf`: Performance improvements
+**Constraints**:
+- Language: English
+- Max 20 words
+- Imperative style ("add" not "added" or "adds")
+- Single sentence (one line only)
+- **No author footers** - Do not add "Generated with Claude Code" or "Co-Authored-By" footers
 
 **Examples**:
 ```bash
 feat: add PDF download caching to improve performance
-
 fix: correct Reiwa era date conversion in metadata extraction
-
-docs: add GitHub workflow section to CLAUDE.md
-
-refactor: extract document type detection into separate function
+docs: update commit message rules in github-workflow skill
+refactor: flatten scripts directory structure
 ```
 
 ## Pull Request Guidelines
