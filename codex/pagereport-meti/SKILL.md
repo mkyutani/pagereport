@@ -10,10 +10,11 @@ description: Generate a summary report for METI meeting pages (HTML and PDF) wit
 - Agency id: meti
 
 ## HTML fetch (step 1)
-Do not use WebFetch. The site requires a User-Agent. Use curl and read the saved HTML.
+Do not use WebFetch. Use the dedicated fetch script with a User-Agent:
 ```
-curl -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-  "https://www.meti.go.jp/..." > ./tmp/meti_page.html
+bash ../common/scripts/fetch_html_with_useragent.sh \
+  "https://www.meti.go.jp/..." \
+  "./tmp/meti_page.html"
 ```
 
 ## PDF download (step 5)

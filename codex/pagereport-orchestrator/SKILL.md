@@ -15,4 +15,4 @@ Run the 11-step workflow, passing JSON between steps and running steps 7-9 in pa
 ## References
 - `references/base_workflow.md`
 - `references/subagent-conventions.md`
-- `../pagereport-subagents/references/agents/*.md`
+- `../subagents/*.md`

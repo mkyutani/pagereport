@@ -84,12 +84,12 @@ All complex Bash operations are externalized to shell scripts for better maintai
 - `check_tool.sh`: Check if a tool is available
 
 **Step-Specific Scripts**:
-- `step1/make_absolute_urls.py`: Convert relative PDF URLs to absolute URLs
-- `step2/convert_era_to_western.py`, `step2/normalize_meeting_name.py`: Date/name normalization
-- `step4/extract_speakers.py`: Extract speakers from minutes
-- `step5/classify_document.py`: Classify PDFs by type
-- `step9/validate_abstract_structure.py`: Validate 5-element abstract structure
-- `step10/validate_filename.py`, `step10/create_output_directory.sh`: File operations
+- `make_absolute_urls.py`: Convert relative PDF URLs to absolute URLs
+- `convert_era_to_western.py`, `normalize_meeting_name.py`: Date/name normalization
+- `extract_speakers.py`: Extract speakers from minutes
+- `classify_document.py`: Classify PDFs by type
+- `validate_abstract_structure.py`: Validate 5-element abstract structure
+- `validate_filename.py`, `create_output_directory.sh`: File operations
 
 **Permissions**: `.claude/settings.local.json`
 - **Pre-authorized shell script execution**: `Bash(bash:*)`, `Bash(sh:*)` - enables all scripts in `.claude/skills/common/scripts/`

@@ -479,7 +479,9 @@ Task(
 
   処理:
   - ./output ディレクトリを作成（存在しなければ）
+  - レポートは見出し（`# {会議名}（第X回）`）から開始する
   - アブストラクトをコードフェンス（```）で囲む
+  - コードフェンス内は本文の次の行にURLのみを記載する
   - ファイルを出力
 
   JSON形式で結果を返してください。"
@@ -669,7 +671,7 @@ for item in items:
 
 ### 詳細仕様
 
-- 各サブエージェントの詳細仕様は `codex-skills/pagereport-subagents/references/agents/*.md` を参照
+- 各サブエージェントの詳細仕様は `codex/subagents/*.md` を参照
 - 共通規約は `codex-skills/pagereport-orchestrator/references/subagent-conventions.md` を参照
 
 ---
@@ -698,7 +700,7 @@ Task(
 ### トラブルシューティング
 
 **サブエージェントが見つからない:**
-- `codex-skills/pagereport-subagents/references/agents/*.md` にYAMLフロントマターがあるか確認
+- `codex/subagents/*.md` にYAMLフロントマターがあるか確認
 
 **並列実行が動作しない:**
 - 1つのメッセージで複数のTaskツールを呼び出しているか確認

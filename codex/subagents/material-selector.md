@@ -454,7 +454,7 @@ for pdf in selected_pdfs:
 
 このサブエージェントは以下の外部スクリプトを使用します:
 
-- `scripts/step5/classify_document.py` - 文書カテゴリ判定
+- `scripts/classify_document.py` - 文書カテゴリ判定
 
 ### 実装例
 
@@ -553,3 +553,13 @@ def extract_material_id(title, filename):
 - ✗ JSON出力後にユーザーの確認を求めない
 - ✗ 「ダウンロードが完了しました。次に進みますか？」などと聞かない
 - ✗ 待機状態に入らない
+
+## Codex CLI 実装
+
+`classify_document.py` でカテゴリ判定し、スコアリング規則に従って選択する。選択されたPDFは `download_pdf.sh` または `download_pdf_with_useragent.sh` で順次ダウンロードする。
+```
+python3 codex/common/scripts/classify_document.py "<title>" "<filename>"
+bash codex/common/scripts/download_pdf.sh "<URL>" "./tmp/<filename>"
+bash codex/common/scripts/download_pdf_with_useragent.sh "<URL>" "./tmp/<filename>"
+```
+結果を `./tmp/step5.json` に出力する。

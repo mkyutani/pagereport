@@ -393,3 +393,11 @@ def clean_overview_text(raw_text):
 - ✗ JSON出力後にユーザーの確認を求めない
 - ✗ 「概要の抽出が完了しました。次に進みますか？」などと聞かない
 - ✗ 待機状態に入らない
+
+## Codex CLI 実装
+
+Step1のHTMLと議事次第PDF（あれば）を用いて概要・議題・出席者情報をまとめる。議事次第は `pdftotext` で抽出する。
+```
+pdftotext -layout "<agenda.pdf>" "./tmp/agenda.txt"
+```
+結果を `./tmp/step3.json` に出力する。

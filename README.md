@@ -204,12 +204,15 @@ Claude Code 用は `.claude/`、Codex 用は `codex/` に同一構成を配置�
 │   │           ├── extract_images_from_md.sh
 │   │           ├── extract_important_pages.sh
 │   │           ├── check_tool.sh
-│   │           ├── step1/          # URL正規化、HTML取得
-│   │           ├── step2/          # 和暦変換、会議名正規化
-│   │           ├── step4/          # 発言者抽出
-│   │           ├── step5/          # 文書分類
-│   │           ├── step9/          # アブストラクト検証
-│   │           └── step10/         # ファイル名検証、出力ディレクトリ作成
+│   │           ├── fetch_html_with_useragent.sh
+│   │           ├── make_absolute_urls.py
+│   │           ├── convert_era_to_western.py
+│   │           ├── normalize_meeting_name.py
+│   │           ├── extract_speakers.py
+│   │           ├── classify_document.py
+│   │           ├── validate_abstract_structure.py
+│   │           ├── validate_filename.py
+│   │           └── create_output_directory.sh
 │   └── settings.local.json         # 権限設定（Bash/WebFetch/Task事前承認）
 ├── CLAUDE.md                       # Claude Code向けガイダンス（詳細仕様）
 ├── README.md                       # このファイル

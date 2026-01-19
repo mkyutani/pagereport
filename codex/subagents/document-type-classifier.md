@@ -239,3 +239,11 @@ JSON形式で標準出力に結果を出力します:
 - **致命的エラー（ファイルが存在しない、PDFが破損など）**: エラー情報をJSON形式で出力 → 即座に終了
 - **判定不能（特徴が不明確）**: `document_type: "other"`, `confidence: "low"` を出力 → 即座に終了
 - **いずれの場合も**: JSON出力 = 完了 = 自動終了
+
+## Codex CLI 実装
+
+先頭5ページを `pdftotext` で抽出し、テキスト特徴から文書タイプを判定する。
+```
+pdftotext -f 1 -l 5 "<pdf>" "./tmp/first5.txt"
+```
+判定結果を `./tmp/step6.json` にまとめる。

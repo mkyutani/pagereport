@@ -74,7 +74,7 @@ tools: Tool1, Tool2, Tool3
 ## ファイル配置
 
 ```
-codex-skills/pagereport-subagents/references/agents/
+codex/subagents/
 ├── content-acquirer.md         # Step 1
 ├── metadata-extractor.md       # Step 2
 ├── page-type-detector.md       # Step 2.5（既存）

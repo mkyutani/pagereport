@@ -15,4 +15,4 @@ Stateless subagents: JSON in/out, no user confirmation.
 
 ## References
 - `references/subagent-conventions.md`
-- `references/agents/<name>.md`
+- `codex/subagents/<name>.md`

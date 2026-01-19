@@ -455,3 +455,15 @@ Task 3: pdf-converter {"file_path": "./tmp/shiryou3.pdf", ...}
 - 各サブエージェントは独立して完了
 - オーケストレータが全完了を検出
 - 自動的に次のステップに進む
+
+## Codex CLI 実装
+
+文書タイプに応じて変換する。基本は `convert_pdftotext.sh`、PowerPointは docling を使用する。
+```
+bash codex/common/scripts/convert_pdftotext.sh "<pdf>" "./tmp/<name>.txt"
+bash codex/common/scripts/convert_pdftotext_fallback.sh "<pdf>" "./tmp/<name>.txt"
+bash codex/common/scripts/docling_convert_async.sh "<pdf>" "./tmp/<name>.md"
+bash codex/common/scripts/docling_poll_status.sh "<task_id>"
+bash codex/common/scripts/docling_get_result.sh "<task_id>" "./tmp/<name>.md"
+```
+結果を `./tmp/step7.json` にまとめる。

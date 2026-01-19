@@ -139,6 +139,11 @@ pagereport スキルのステップ9（要約の生成）で使用されます�
 
 ## 処理フロー
 
+### アブストラクトとURLの取り扱い（重要）
+- `abstract.text` には本文のみを入れ、URLは含めない。
+- `abstract.url` には `original_url` をそのまま設定する。
+- ファイル出力時にコードフェンス内で本文の次の行にURLのみを出す前提のため、本文末尾にURLを混ぜない。
+
 ### 1. アブストラクトの生成
 
 #### 論文形式の5要素構造
@@ -340,7 +345,7 @@ def check_length_and_retry(abstract_text, max_retries=3):
 
 このサブエージェントは以下の外部スクリプトを使用します:
 
-- `scripts/step9/validate_abstract_structure.py` - アブストラクト5要素構造の検証
+- `scripts/validate_abstract_structure.py` - アブストラクト5要素構造の検証
 
 ### 実装ガイドライン
 
@@ -459,3 +464,11 @@ https://www.cas.go.jp/...（元のURL）
 - 自動的に再生成（最大3回）
 - ユーザー確認は不要
 - リトライ上限時のみエラーを返す
+
+## Codex CLI 実装
+
+Step2/2.5/3/4/8を統合し、必須5要素（背景・目的・議論・決定・今後）で1段落1000字以内のアブストラクトを作成する。検証は `codex/common/scripts/validate_abstract_structure.py` を使用する。
+```
+python3 codex/common/scripts/validate_abstract_structure.py "./tmp/abstract.txt"
+```
+詳細レポートと合わせて `./tmp/step9.json` に出力する。

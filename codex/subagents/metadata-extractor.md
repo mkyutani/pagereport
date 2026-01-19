@@ -274,8 +274,8 @@ def convert_to_western_year(era, year, month, day):
 
 このサブエージェントは以下の外部スクリプトを使用します:
 
-- `scripts/step2/convert_era_to_western.py` - 元号→西暦変換
-- `scripts/step2/normalize_meeting_name.py` - 会議名の正規化
+- `scripts/convert_era_to_western.py` - 元号→西暦変換
+- `scripts/normalize_meeting_name.py` - 会議名の正規化
 
 ### 実装例
 
@@ -398,3 +398,27 @@ grep -E "令和.*年.*月.*日|場所:" ./tmp/shidai_meta.txt
 - ✗ JSON出力後にユーザーの確認を求めない
 - ✗ メタデータが足りない場合でも、このサブエージェント内でユーザーに質問しない
 - ✗ 待機状態に入らない
+
+## Codex CLI 実装
+
+Taskを使わず、Step1のHTMLから会議名・日付・回数・場所を抽出し、正規化スクリプトで補正する。
+
+```
+# 例: 正規化
+python3 codex/common/scripts/normalize_meeting_name.py "<meeting_name>"
+python3 codex/common/scripts/convert_era_to_western.py "<date_string>"
+```
+
+抽出結果は以下の形式で `./tmp/step2.json` にまとめる。
+```
+{
+  "status": "success",
+  "data": {
+    "meeting_name": "...",
+    "meeting_date": "YYYYMMDD",
+    "round_number": 2,
+    "round_text": "第2回",
+    "location": "..."
+  }
+}
+```

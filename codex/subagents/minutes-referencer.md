@@ -306,7 +306,7 @@ def extract_speakers(minutes_text):
 
 このサブエージェントは以下の外部スクリプトを使用します:
 
-- `scripts/step4/extract_speakers.py` - 発言者の抽出と集計
+- `scripts/extract_speakers.py` - 発言者の抽出と集計
 
 ### 実装例
 
@@ -448,3 +448,12 @@ def detect_material_mentions(minutes_text):
 - ✗ 「議事録の抽出が完了しました。次に進みますか？」などと聞かない
 - ✗ 待機状態に入らない
 - ✗ 議事録が存在しない場合でも、エラーとして扱わない（`minutes_found: false`で正常終了）
+
+## Codex CLI 実装
+
+議事録PDFがある場合は `pdftotext` で抽出し、発言者は `codex/common/scripts/extract_speakers.py` で抽出する。
+```
+pdftotext -layout "<minutes.pdf>" "./tmp/minutes.txt"
+python3 codex/common/scripts/extract_speakers.py "./tmp/minutes.txt"
+```
+資料言及のカウントも含めて `./tmp/step4.json` にまとめる。

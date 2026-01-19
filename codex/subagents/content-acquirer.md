@@ -283,8 +283,8 @@ PDFファイルの場合、HTMLクリーニングやリンク抽出は不要。
 
 このサブエージェントは以下の外部スクリプトを使用します:
 
-- `scripts/step1/fetch_html_with_useragent.sh` - User-Agent付きHTMLフェッチ（中小企業庁など）
-- `scripts/step1/make_absolute_urls.py` - PDFリンクの絶対URL化
+- `scripts/fetch_html_with_useragent.sh` - User-Agent付きHTMLフェッチ（中小企業庁など）
+- `scripts/make_absolute_urls.py` - PDFリンクの絶対URL化
 
 ### 実装例
 
@@ -357,7 +357,7 @@ def make_absolute_urls(pdf_links, base_url):
 呼び出し元から「WebFetchを使用せず、直接シェルスクリプトで取得」と指示された場合:
 
 ```bash
-bash scripts/step1/fetch_html_with_useragent.sh \
+bash scripts/fetch_html_with_useragent.sh \
   "https://www.chusho.meti.go.jp/..." \
   "./tmp/chusho_page.html"
 ```
@@ -398,3 +398,52 @@ Read(file_path="./tmp/chusho_page.html")
 - ✗ JSON出力後にユーザーの確認を求めない
 - ✗ 「取得が完了しました。次に進みますか？」などと聞かない
 - ✗ 待機状態に入らない
+
+## Codex CLI 実装
+
+Task/WebFetchを使わず、以下の手順で同等処理を行う。
+
+1. HTML取得（User-Agent必須サイトは専用スクリプト）
+```
+bash codex/common/scripts/fetch_html_with_useragent.sh "<URL>" "./tmp/page.html"
+```
+
+2. PDFリンク抽出 + 絶対URL化（例）
+```
+python3 - <<'PY'
+import json, re
+from urllib.parse import urljoin
+
+base_url = "<URL>"
+html = open("./tmp/page.html", "r", encoding="utf-8").read()
+hrefs = re.findall(r'href="([^"]+\\.pdf)"', html, flags=re.IGNORECASE)
+pdf_links = []
+for i, href in enumerate(hrefs, 1):
+    url = urljoin(base_url, href)
+    pdf_links.append({
+        "text": "PDF",
+        "url": url,
+        "filename": url.split("/")[-1],
+        "link_position": i,
+        "estimated_category": "material"
+    })
+out = {
+  "status": "success",
+  "data": {
+    "content_type": "html",
+    "html_content": html,
+    "page_title": None,
+    "pdf_links": pdf_links,
+    "metadata": {
+      "original_url": base_url,
+      "fetched_at": None,
+      "content_length": len(html),
+      "pdf_count": len(pdf_links)
+    }
+  }
+}
+print(json.dumps(out, ensure_ascii=False, indent=2))
+PY
+```
+
+3. PDF直リンクの場合は、pdf_linksに1件だけ入れてJSONを出力する。

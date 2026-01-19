@@ -127,7 +127,9 @@ fi
 {詳細レポートのセクション...}
 ```
 
-**重要:** アブストラクトは必ずコードフェンス（\`\`\`）で囲む。
+**重要:** レポートは必ず見出し（`# {会議名}（第X回）`）から開始する。
+アブストラクトは必ずコードフェンス（\`\`\`）で囲む。
+本文の次の行にURLのみを記載する（URL行はそれ以外の文字を含めない）。
 これによりBluesky投稿時に簡単に抽出できる。
 
 ### 3. ファイル書き込み
@@ -180,8 +182,8 @@ grep -A1 "## アブストラクト" "./output/{output_filename}" | grep "^\`\`\`
 
 このサブエージェントは以下の外部スクリプトを使用します:
 
-- `scripts/step10/validate_filename.py` - ファイル名の検証
-- `scripts/step10/create_output_directory.sh` - 出力ディレクトリの作成
+- `scripts/validate_filename.py` - ファイル名の検証
+- `scripts/create_output_directory.sh` - 出力ディレクトリの作成
 
 ### 実装例
 
@@ -368,3 +370,11 @@ fi
 **成功時の追加処理:**
 - ファイルパスをユーザーに通知（オーケストレータが実施）
 - Bluesky投稿スクリプトにファイルパスを渡す
+
+## Codex CLI 実装
+
+```
+bash codex/common/scripts/create_output_directory.sh "./output"
+python3 codex/common/scripts/validate_filename.py "<output_filename>"
+```
+`output/{meeting_name}_第{N}回_{YYYYMMDD}_report.md` に出力する。
