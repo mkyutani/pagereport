@@ -4,11 +4,11 @@
 
 ## 概要
 
-このプロジェクトは、日本の政府会議ページから構造化されたサマリーを生成する Claude Code スキル群です。HTMLページとPDFドキュメントの両方に対応し、会議資料を並列分析して統合レポートファイルを生成します。生成されたアブストラクトは自動的にBlueskyに投稿されます。
+このプロジェクトは、日本の政府会議ページから構造化されたサマリーを生成する Claude Code / Codex 向けスキル群です。HTMLページとPDFドキュメントの両方に対応し、会議資料を並列分析して統合レポートファイルを生成します。生成されたアブストラクトは自動的にBlueskyに投稿されます。
 
 ## 主な機能
 
-- **複数の政府機関に対応**: 内閣官房（CAS）、内閣府（CAO）、経済産業省（METI）、中小企業庁（Chusho）、厚生労働省（MHLW）、金融庁（FSA）
+- **複数の政府機関に対応**: 内閣官房（CAS）、内閣府（CAO）、経済産業省（METI）、中小企業庁（Chusho）、厚生労働省（MHLW）、金融庁（FSA）、デジタル庁（Digital）
 - **並列処理による高速化**: 文書タイプ検出と資料分析を並列実行（30-50%の処理時間短縮）
 - **自動メタデータ抽出**: 会議名、日付（YYYYMMDD形式に変換）、回数、開催場所を自動抽出
 - **PDF優先度付けシステム**: 関連性、重要性、文書タイプに基づいてPDFをスコアリング（1-5）
@@ -18,7 +18,9 @@
 
 ## 使い方
 
-### 基本的な使用方法
+### Claude Code の場合
+
+Claude Code では `.claude/` 配下のスキルを使用します。コマンドは以下の通りです。
 
 ```bash
 # 内閣官房（CAS）の会議ページを処理
@@ -38,7 +40,14 @@
 
 # 金融庁（FSA）の会議ページを処理
 /pagereport-fsa "https://www.fsa.go.jp/..."
+
+# デジタル庁（Digital）の会議ページを処理
+/pagereport-digital "https://www.digital.go.jp/..."
 ```
+
+### Codex の場合
+
+Codex では `codex/` 配下のスキルを使用します。コマンドの呼び出し名は Claude Code と同一です。
 
 ### Bluesky投稿
 
@@ -92,19 +101,35 @@ output/
 
 ## アーキテクチャ
 
+### オーケストレーターパターン
+
+このプロジェクトは**オーケストレーターパターン**を採用しています：
+
+- **オーケストレーター**: `base_workflow.md` - 軽量なワークフロー調整役
+- **サブエージェント**: 11の専門処理ユニット（各ステップに1つ）
+
+**メリット:**
+- **トークン最適化**: 必要なサブエージェントのみロード（60-80%削減）
+- **並列実行**: Step 6, 7, 8を並列処理（処理時間67%短縮）
+- **保守性**: 各コンポーネントを独立して更新可能
+- **再利用性**: サブエージェントを他のプロジェクトでも利用可能
+
 ### 処理パイプライン（11ステップ）
 
-1. **コンテンツ取得**: WebFetchでHTML取得、またはローカル/リモートPDF読み取り
-2. **メタデータ抽出**: 会議名、日付、回数、場所を自動抽出
-3. **会議概要作成**: HTMLまたは議事次第PDFから抽出
-4. **議事録参照**: 実際の発言内容を探索
-5. **資料の選択とダウンロード**: 関連性でPDFをスコアリング、優先度の高いファイルをcurlで`/tmp/`にダウンロード
-6. **文書タイプ検出** ⚡️ **並列処理**: `document-type-classifier`サブエージェントで複数PDFを並列判定
-7. **PDF to Markdown変換**: docling（PowerPoint）またはpdftotext（Word）でトークン最適化
-8. **タイプ別読み取り** ⚡️ **並列処理**: `material-analyzer`サブエージェントで複数資料を並列分析
-9. **サマリー生成**: 構造化された要約（1,000文字、5要素構造）+ 詳細レポート作成
-10. **ファイル出力**: `{会議名}_第{N}回_{YYYYMMDD}_report.md`を生成
-11. **Bluesky投稿**: アブストラクトを自動的にBlueskyに投稿
+| Step | サブエージェント | 処理内容 |
+|------|------------------|----------|
+| 1 | `content-acquirer` | HTML/PDF取得、PDFリンク抽出 |
+| 2 | `metadata-extractor` | 会議名、日付、回数、場所を抽出 |
+| 2.5 | `page-type-detector` | ページタイプ判定（会議/報告書） |
+| 3 | `overview-creator` | 会議概要作成 |
+| 4 | `minutes-referencer` | 議事録から発言内容を抽出 |
+| 5 | `material-selector` | 資料の優先度判定とダウンロード |
+| 6 | `document-type-classifier` | 文書タイプ検出 ⚡️並列 |
+| 7 | `pdf-converter` | PDF→テキスト/Markdown変換 ⚡️並列 |
+| 8 | `material-analyzer` | 資料分析 ⚡️並列 |
+| 9 | `summary-generator` | アブストラクト+詳細レポート生成 |
+| 10 | `file-writer` | レポートファイル出力 |
+| 11 | - | Bluesky投稿（`ssky post`） |
 
 ### PDF処理戦略
 
@@ -127,13 +152,25 @@ output/
 
 ## プロジェクト構成
 
+Claude Code 用は `.claude/`、Codex 用は `codex/` に同一構成を配置しています。
+
 ```
 .
 ├── .claude/
-│   ├── agents/                      # サブエージェント（Task toolで呼び出し）
+│   ├── agents/                      # サブエージェント（Task toolで呼び出し、11ファイル）
+│   │   ├── content-acquirer.md     # コンテンツ取得（Step 1）
+│   │   ├── metadata-extractor.md   # メタデータ抽出（Step 2）
 │   │   ├── page-type-detector.md   # ページタイプ検出（Step 2.5）
-│   │   ├── document-type-classifier.md # 文書タイプ検出（Step 6、並列実行可能）
-│   │   └── material-analyzer.md    # 資料分析（Step 8、並列実行可能）
+│   │   ├── overview-creator.md     # 会議概要作成（Step 3）
+│   │   ├── minutes-referencer.md   # 議事録参照（Step 4）
+│   │   ├── material-selector.md    # 資料選択（Step 5）
+│   │   ├── document-type-classifier.md # 文書タイプ検出（Step 6、並列実行）
+│   │   ├── pdf-converter.md        # PDF変換（Step 7、並列実行）
+│   │   ├── material-analyzer.md    # 資料分析（Step 8、並列実行）
+│   │   ├── summary-generator.md    # サマリー生成（Step 9）
+│   │   └── file-writer.md          # ファイル出力（Step 10）
+│   ├── docs/                        # ドキュメント
+│   │   └── subagent-conventions.md # サブエージェント規約
 │   ├── skills/
 │   │   ├── pagereport-cas/         # 内閣官房スキル
 │   │   │   └── SKILL.md
@@ -147,12 +184,16 @@ output/
 │   │   │   └── SKILL.md
 │   │   ├── pagereport-fsa/         # 金融庁スキル
 │   │   │   └── SKILL.md
+│   │   ├── pagereport-digital/     # デジタル庁スキル
+│   │   │   └── SKILL.md
 │   │   ├── bluesky-post/           # Bluesky投稿スキル（auto-execute: true）
 │   │   │   ├── SKILL.md            # /bluesky-post コマンドとして実行可能
 │   │   │   └── post.sh             # 投稿用シェルスクリプト
+│   │   ├── github-workflow/        # GitHubワークフロー規約
+│   │   │   └── SKILL.md            # コミット/PR規約
 │   │   └── common/
-│   │       ├── base_workflow.md    # 共通ワークフロー（11ステップ）
-│   │       └── scripts/            # 自動実行用シェルスクリプト（10ファイル）
+│   │       ├── base_workflow.md    # オーケストレーター（11ステップ）
+│   │       └── scripts/            # 自動実行用シェルスクリプト
 │   │           ├── download_pdf.sh
 │   │           ├── download_pdf_with_useragent.sh
 │   │           ├── convert_pdftotext.sh
@@ -162,7 +203,16 @@ output/
 │   │           ├── docling_get_result.sh
 │   │           ├── extract_images_from_md.sh
 │   │           ├── extract_important_pages.sh
-│   │           └── check_tool.sh
+│   │           ├── check_tool.sh
+│   │           ├── fetch_html_with_useragent.sh
+│   │           ├── make_absolute_urls.py
+│   │           ├── convert_era_to_western.py
+│   │           ├── normalize_meeting_name.py
+│   │           ├── extract_speakers.py
+│   │           ├── classify_document.py
+│   │           ├── validate_abstract_structure.py
+│   │           ├── validate_filename.py
+│   │           └── create_output_directory.sh
 │   └── settings.local.json         # 権限設定（Bash/WebFetch/Task事前承認）
 ├── CLAUDE.md                       # Claude Code向けガイダンス（詳細仕様）
 ├── README.md                       # このファイル
@@ -180,7 +230,7 @@ output/
 - `Bash(pdftotext:*)`: Word PDF処理
 - `Bash(docker:*)`: docling（PowerPoint PDF処理）
 - `Bash(ssky:*)`: Bluesky投稿
-- `Read/Write/Edit(path:/tmp/*)`: 一時ファイル操作
+- `Read/Write/Edit(path:./tmp/*)`: 一時ファイル操作
 - `Read/Write/Edit(path:./output/*)`: 出力ファイル操作
 
 ### 依存ツール

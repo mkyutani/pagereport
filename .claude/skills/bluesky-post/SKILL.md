@@ -5,8 +5,8 @@ allowed-tools:
   - Bash(awk:*)
   - Bash(cat:*)
   - Bash(ssky:*)
-  - Read(path:/tmp/*)
-  - Write(path:/tmp/*)
+  - Read(path:./tmp/*)
+  - Write(path:./tmp/*)
 auto-execute: true
 ---
 
@@ -26,6 +26,17 @@ pagereportスキルのステップ11（Bluesky投稿）で使用されます。
 ```
 
 - `report_file_path`: レポートファイルの絶対パスまたは相対パス（例: `./output/会議名_第8回_20251223_report.md`）
+
+## Bash toolの使用制限
+
+**【重要】Bash toolはシェルスクリプト実行のみに使用:**
+- ファイル読み取り: Bash cat/head/tail **禁止** → **Read tool** を使用
+- ファイル検索: Bash find/ls **禁止** → **Glob tool** を使用
+- コンテンツ検索: Bash grep/rg **禁止** → **Grep tool** を使用
+- ファイル編集: Bash sed/awk **禁止** → **Edit tool** を使用
+- ファイル書き込み: Bash echo/cat **禁止** → **Write tool** を使用
+- ユーザーへの通信: Bash echo **禁止** → 直接テキスト出力を使用
+- 許可される使用: `.claude/skills/bluesky-post/post.sh` 実行、ssky、awk、その他システムコマンド
 
 ## 処理フロー
 

@@ -14,6 +14,16 @@ PDFの最初の5ページを分析し、Word/PowerPoint/議事次第/名簿/ニ�
 - 出力後にユーザーの確認を待たない
 - 呼び出し元（base_workflow.md）が自動的に次のステップ（Step 7）を開始する
 
+**【重要】Bash toolの使用制限:**
+- **Bash toolはシェルスクリプト実行のみに使用**
+- ファイル読み取り: Bash cat/head/tail **禁止** → **Read tool** を使用
+- ファイル検索: Bash find/ls **禁止** → **Glob tool** を使用
+- コンテンツ検索: Bash grep/rg **禁止** → **Grep tool** を使用
+- ファイル編集: Bash sed/awk **禁止** → **Edit tool** を使用
+- ファイル書き込み: Bash echo/cat **禁止** → **Write tool** を使用
+- ユーザーへの通信: Bash echo **禁止** → 直接テキスト出力を使用
+- 許可される使用: `.claude/skills/common/scripts/` 配下のシェルスクリプト実行、その他システムコマンド
+
 ## 用途
 
 pagereport スキルのステップ6（文書タイプ判定）で使用されます。
@@ -25,7 +35,7 @@ pagereport スキルのステップ6（文書タイプ判定）で使用され�
 <pdf_file_path>
 ```
 
-- `pdf_file_path`: 判定対象のPDFファイルの絶対パス（例: `/tmp/shiryou1.pdf`）
+- `pdf_file_path`: 判定対象のPDFファイルの絶対パス（例: `./tmp/shiryou1.pdf`）
 
 ## 出力
 
@@ -33,7 +43,7 @@ JSON形式で標準出力に結果を出力します:
 
 ```json
 {
-  "file_path": "/tmp/shiryou1.pdf",
+  "file_path": "./tmp/shiryou1.pdf",
   "document_type": "powerpoint",
   "confidence": "high",
   "reason": "スライドタイトル、箇条書き記号（●、・）が多数、体言止めの頻度が高い",
@@ -68,10 +78,10 @@ JSON形式で標準出力に結果を出力します:
 1. **PDF読み取り**: pdftotextで最初の5ページだけを抽出
    ```bash
    # 最初の5ページだけをテキスト抽出（高速・確実）
-   pdftotext -f 1 -l 5 /tmp/document.pdf /tmp/document_first5.txt
+   pdftotext -f 1 -l 5 ./tmp/document.pdf ./tmp/document_first5.txt
 
    # 抽出されたテキストファイルを読む（軽量なので "PDF too large" エラーにならない）
-   Read /tmp/document_first5.txt
+   Read ./tmp/document_first5.txt
    ```
    - `-f 1`: 開始ページ（1ページ目から）
    - `-l 5`: 終了ページ（5ページ目まで）
@@ -144,7 +154,7 @@ JSON形式で標準出力に結果を出力します:
 1. **ファイルが存在しない**:
    ```json
    {
-     "file_path": "/tmp/nonexistent.pdf",
+     "file_path": "./tmp/nonexistent.pdf",
      "error": "file_not_found",
      "message": "指定されたファイルが見つかりません"
    }
@@ -153,7 +163,7 @@ JSON形式で標準出力に結果を出力します:
 2. **PDFの読み取りに失敗**:
    ```json
    {
-     "file_path": "/tmp/corrupted.pdf",
+     "file_path": "./tmp/corrupted.pdf",
      "error": "read_failed",
      "message": "PDFの読み取りに失敗しました: [エラー詳細]"
    }
@@ -162,7 +172,7 @@ JSON形式で標準出力に結果を出力します:
 3. **判定不能**:
    ```json
    {
-     "file_path": "/tmp/unknown.pdf",
+     "file_path": "./tmp/unknown.pdf",
      "document_type": "other",
      "confidence": "low",
      "reason": "明確な文書タイプの特徴が検出できませんでした",
@@ -174,11 +184,11 @@ JSON形式で標準出力に結果を出力します:
 
 ```bash
 # 単一PDFの判定
-/document-type-classifier "/tmp/shiryou1.pdf"
+/document-type-classifier "./tmp/shiryou1.pdf"
 
 # 出力例（JSON）
 {
-  "file_path": "/tmp/shiryou1.pdf",
+  "file_path": "./tmp/shiryou1.pdf",
   "document_type": "powerpoint",
   "confidence": "high",
   "reason": "スライドタイトル、箇条書き記号が多数、体言止めの頻度が高い",

@@ -6,6 +6,21 @@ tools: Read
 
 # Page Type Detector サブエージェント
 
+**【重要】このサブエージェントの役割:**
+- JSON形式で結果を出力したら、**自動的に完了して制御を返す**
+- 出力後にユーザーの確認を待たない
+- 呼び出し元（base_workflow.md）が自動的に次のステップを開始する
+
+**【重要】Bash toolの使用制限:**
+- **Bash toolはシェルスクリプト実行のみに使用**
+- ファイル読み取り: Bash cat/head/tail **禁止** → **Read tool** を使用
+- ファイル検索: Bash find/ls **禁止** → **Glob tool** を使用
+- コンテンツ検索: Bash grep/rg **禁止** → **Grep tool** を使用
+- ファイル編集: Bash sed/awk **禁止** → **Edit tool** を使用
+- ファイル書き込み: Bash echo/cat **禁止** → **Write tool** を使用
+- ユーザーへの通信: Bash echo **禁止** → 直接テキスト出力を使用
+- 許可される使用: `.claude/skills/common/scripts/` 配下のシェルスクリプト実行、その他システムコマンド
+
 ## 目的
 
 HTMLページの構造と内容を分析し、**会議ページ**か**報告書・答申ページ**かを自動判定します。

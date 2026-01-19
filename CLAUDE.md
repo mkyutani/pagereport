@@ -4,80 +4,100 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Claude Code skills project for generating structured summaries of Japanese government meeting pages. The main skill (`pagereport`) processes both HTML pages and PDF documents from government websites (primarily www.cas.go.jp), extracting metadata, analyzing meeting materials, and producing a unified report file:
+This is a Claude Code skills project for generating structured summaries of Japanese government meeting pages. The main skill (`pagereport`) processes both HTML pages and PDF documents from government websites, extracting metadata, analyzing meeting materials, and producing a unified report file:
 
 **Report file** (`*_report.md`): Markdown report containing a 1,000-character abstract (enclosed in code fences for easy extraction) + material list + comprehensive details up to 10,000 characters for future reference
 
 ## Architecture
 
+### Orchestrator Pattern
+
+This project uses an **orchestrator pattern** where the main workflow delegates all processing to specialized subagents:
+
+- **Orchestrator**: `.claude/skills/common/base_workflow.md`
+  - Lightweight workflow coordinator (686 lines, reduced from 955)
+  - Manages 11-step processing flow
+  - Calls subagents via Task tool
+  - Handles data transformation between steps
+  - Manages parallel execution (Steps 6, 7, 8)
+  - Error handling based on error levels (CRITICAL/MAJOR/MINOR)
+
+- **Subagents**: `.claude/agents/` (11 total)
+  - Each subagent is a self-contained processing unit
+  - JSON input/output for standardization
+  - Automatic completion without user confirmation
+  - Independent testing and maintenance
+
+**Benefits of Orchestrator Pattern:**
+- **Token Optimization**: Only load necessary subagent files (60-80% reduction)
+- **Parallel Execution**: 67% faster processing (9min vs 27min)
+- **Maintainability**: Each component can be updated independently
+- **Reusability**: Subagents can be used in other projects
+
 ### Core Components
 
-**Skill Definitions**: `.claude/skills/`
-- `pagereport-cas/`: Internal Cabinet Office (内閣府) meeting pages
-- `pagereport-cao/`: Cabinet Office (総務省) meeting pages
-- `pagereport-meti/`: Ministry of Economy, Trade and Industry (経済産業省) meeting pages
-- `pagereport-chusho/`: Small and Medium Enterprise Agency (中小企業庁) meeting pages
-- `pagereport-mhlw/`: Ministry of Health, Labour and Welfare (厚生労働省) meeting pages
-- `pagereport-fsa/`: Financial Services Agency (金融庁) meeting pages
-- `common/base_workflow.md`: Shared workflow specification used by all skills
-  - Defines an 11-step processing pipeline from content fetching to Bluesky posting
-  - Includes detailed rules for PDF prioritization, document type detection, and token optimization
-**Subagents**: `.claude/agents/`
+**Skills**: `.claude/skills/`
+- `pagereport-cas/`: Internal Cabinet Office (内閣府)
+- `pagereport-cao/`: Cabinet Office (総務省)
+- `pagereport-meti/`: Ministry of Economy, Trade and Industry (経済産業省)
+- `pagereport-chusho/`: Small and Medium Enterprise Agency (中小企業庁)
+- `pagereport-mhlw/`: Ministry of Health, Labour and Welfare (厚生労働省)
+- `pagereport-fsa/`: Financial Services Agency (金融庁)
+- `pagereport-digital/`: Digital Agency (デジタル庁)
+- `bluesky-post/`: Bluesky posting skill (auto-execute: true)
+- `github-workflow/`: GitHub workflow rules for commits and pull requests
+- `common/base_workflow.md`: **Orchestrator** that coordinates all 11 steps
+
+**Subagents**: `.claude/agents/` (11 subagents for 11 steps)
 
 All subagents are invoked via the **Task tool** (not Skill tool) for automatic execution without user confirmation.
 
-- `page-type-detector`: Page type detection subagent (Step 2.5)
-  - Analyzes HTML page structure to determine if it's a meeting page or report page
-  - Determines processing strategy for subsequent steps
-  - Invoked via: `Task(subagent_type: "page-type-detector")`
-- `document-type-classifier`: Document type detection subagent (Step 6)
-  - Analyzes PDF structure to determine document type (Word/PowerPoint/etc)
-  - **Supports parallel execution**: Multiple PDFs classified simultaneously in a single message with multiple Task tool calls
-  - Invoked via: `Task(subagent_type: "document-type-classifier")`
-- `material-analyzer`: Material analysis subagent (Step 8)
-  - Applies document type-specific reading strategies
-  - **Supports parallel execution**: Multiple materials analyzed simultaneously in a single message with multiple Task tool calls
-  - Generates detailed summaries with key points
-  - Invoked via: `Task(subagent_type: "material-analyzer")`
+1. **content-acquirer** (Step 1): HTML/PDF acquisition and PDF link extraction
+2. **metadata-extractor** (Step 2): Meeting metadata extraction
+3. **page-type-detector** (Step 2.5): Page type detection
+4. **overview-creator** (Step 3): Meeting overview creation
+5. **minutes-referencer** (Step 4): Minutes extraction
+6. **material-selector** (Step 5): Material prioritization and download
+7. **document-type-classifier** (Step 6): Document type detection (parallel)
+8. **pdf-converter** (Step 7): PDF to text/Markdown conversion (parallel)
+9. **material-analyzer** (Step 8): Material analysis (parallel)
+10. **summary-generator** (Step 9): Abstract and report generation
+11. **file-writer** (Step 10): Report file output
+
+**Subagent Error Handling:**
 - **If subagents are unavailable**: Processing will terminate with error message
-  - Workflow checks subagent availability before Steps 2.5, 6, and 8
-  - Fallback to direct processing is NOT supported (to prioritize system configuration fixes)
+- **Error Levels**:
+  - `CRITICAL`: Stop processing (e.g., HTML fetch failure)
+  - `MAJOR`: Skip step and continue (e.g., minutes not found)
+  - `MINOR`: Warning only (e.g., Bluesky post failure)
 
 **Shell Scripts**: `.claude/skills/common/scripts/`
 
-All complex Bash operations are externalized to shell scripts for better maintainability and automatic execution:
+All complex Bash operations are externalized to shell scripts for better maintainability and automatic execution.
 
-- `download_pdf.sh`: Download PDF from URL (normal sites)
-- `download_pdf_with_useragent.sh`: Download PDF with browser User-Agent (METI/Chusho/MHLW/FSA)
-- `convert_pdftotext.sh`: Convert PDF to text using pdftotext
-- `convert_pdftotext_fallback.sh`: Convert PDF to text using PyPDF2 (fallback)
-- `docling_convert_async.sh`: Start docling async conversion, return TASK_ID
-- `docling_poll_status.sh`: Poll docling conversion status until complete
-- `docling_get_result.sh`: Retrieve docling conversion result as Markdown
-- `extract_images_from_md.sh`: Extract base64 images from Markdown to separate files
-- `extract_important_pages.sh`: Extract important pages from full Markdown
+**Common Scripts**:
+- `download_pdf.sh`, `download_pdf_with_useragent.sh`: PDF download
+- `convert_pdftotext.sh`, `convert_pdftotext_fallback.sh`: pdftotext conversion
+- `docling_convert_async.sh`, `docling_poll_status.sh`, `docling_get_result.sh`: docling conversion
+- `extract_images_from_md.sh`: Extract base64 images from Markdown
+- `extract_important_pages.sh`: Extract important pages
 - `check_tool.sh`: Check if a tool is available
 
-**Benefits**:
-- All scripts are pre-authorized via `Bash(bash:*)` permission
-- No user confirmation required during execution
-- Complex multi-line operations (loops, heredocs, pipes) work seamlessly
-- Easy to test and maintain independently
-- Consistent error handling across all workflows
-
-**Bluesky Post Skill**: `.claude/skills/bluesky-post/`
-- Auto-execute skill (`auto-execute: true`) for posting abstracts to Bluesky
-- Can be invoked manually: `/bluesky-post <report_file_path>`
-- Automatically called by pagereport skills in Step 11
-- Implementation: `post.sh` shell script for abstract extraction and posting
+**Step-Specific Scripts**:
+- `make_absolute_urls.py`: Convert relative PDF URLs to absolute URLs
+- `convert_era_to_western.py`, `normalize_meeting_name.py`: Date/name normalization
+- `extract_speakers.py`: Extract speakers from minutes
+- `classify_document.py`: Classify PDFs by type
+- `validate_abstract_structure.py`: Validate 5-element abstract structure
+- `validate_filename.py`, `create_output_directory.sh`: File operations
 
 **Permissions**: `.claude/settings.local.json`
 - **Pre-authorized shell script execution**: `Bash(bash:*)`, `Bash(sh:*)` - enables all scripts in `.claude/skills/common/scripts/`
 - Pre-authorized Bash commands: `curl`, `mkdir`, `ls`, `grep`, `wc`, `cat`, `head`, `tail`, `which`, `command`, `sleep`, `python3`, `pdftotext`, `docker`, `awk`, `ssky`, `chmod`, `wget`
 - Pre-authorized WebFetch domains: `github.com`, `*.go.jp`
-- Pre-authorized file operations: `Read/Write/Edit(path:/tmp/*)`, `Read/Write/Edit(path:./output/*)`
-- Pre-authorized skills: All pagereport skills, bluesky-post, and all subagents
-- Pre-authorized Task tool subagents: `document-type-classifier`, `material-analyzer`, `page-type-detector`
+- Pre-authorized file operations: `Read/Write/Edit(path:./tmp/*)`, `Read/Write/Edit(path:./output/*)`
+- Pre-authorized skills: All pagereport skills, bluesky-post
+- **Pre-authorized Task tool subagents** (all 11): content-acquirer, metadata-extractor, page-type-detector, overview-creator, minutes-referencer, material-selector, document-type-classifier, pdf-converter, material-analyzer, summary-generator, file-writer
 - These permissions enable fully automatic workflow execution without user confirmation prompts
 
 ### Processing Pipeline
@@ -88,127 +108,59 @@ The skill follows a structured 11-step workflow:
 2. **Metadata Extraction**: Auto-extract meeting name, date (converted to YYYYMMDD), round number, location
 3. **Meeting Overview Creation**: Extract from HTML or agenda PDF
 4. **Minutes Reference**: Locate actual participant statements if available
-5. **Material Selection and Download**: Score PDFs (1-5) by relevance, download top-priority files with curl to `/tmp/`
-6. **Document Type Detection** (**Parallel Subagents**): Use `document-type-classifier` subagent to judge PDF type (Word/PowerPoint/Other) from first 5 pages. Multiple PDFs are classified in parallel for speed.
-7. **PDF to Markdown Conversion**: Convert with docling (PowerPoint) or pdftotext (Word) for token optimization
-8. **Type-Specific Reading** (**Parallel Subagents**): Use `material-analyzer` subagent to apply token-optimized strategies based on document type and page count. Multiple materials are analyzed in parallel, reducing processing time by 30-50%.
+5. **Material Selection and Download**: Score PDFs (1-5) by relevance, download top-priority files to `./tmp/`
+6. **Document Type Detection** (Parallel): Classify PDFs as Word/PowerPoint/Other from first 5 pages
+7. **PDF to Markdown Conversion** (Parallel): Convert with docling (PowerPoint) or pdftotext (Word) for token optimization
+8. **Type-Specific Reading** (Parallel): Apply token-optimized strategies based on document type and page count
 9. **Summary Generation**: Create structured abstract (1,000 chars, 5-element structure) + detailed report
 10. **File Output**: Write to `{meeting_name}_{round}_{date}_report.md` with abstract enclosed in code fences
 11. **Bluesky Posting**: Automatically post the abstract to Bluesky using `ssky post` command
 
 ### Key Design Principles
 
-**Parallel Processing**:
-- **Task tool enables automatic parallel execution** without user confirmation
-- **Document type detection (Step 6)**: Multiple PDFs classified in parallel
-  - Implementation: Single message with multiple `Task(subagent_type: "document-type-classifier")` calls
-  - Each PDF gets its own independent subagent
-- **Material analysis (Step 8)**: Multiple materials analyzed in parallel
-  - Implementation: Single message with multiple `Task(subagent_type: "material-analyzer")` calls
-  - Each material gets its own independent subagent
-- **Performance improvement**: Reduces overall processing time by 30-50% when handling 3+ materials
-- **Independence**: Each subagent operates independently with its own context
-- **Automatic continuation**: When all parallel subagents complete, workflow automatically proceeds to next step without user intervention
+**Parallel Processing:** Steps 6, 7, 8 run multiple subagents in parallel (one per PDF/material) using multiple `Task(subagent_type: "...")` calls in single message. Reduces processing time by 30-50%.
 
-**Token Optimization**:
-- Convert PDFs to Markdown with docling container when beneficial (>50 pages, complex layouts)
-- Dynamic reading strategies based on page count (≤5: full text, ≤20: ToC + key sections, ≤50: ToC + summary + conclusion, >50: metadata + ToC + summary only)
-- Use Read tool's limit/offset parameters for large documents
-- Extract only essential content (titles, section headers) before detailed reading
-- Skip low-priority materials (rosters, seating charts, reference materials)
+**Token Optimization:** Dynamic reading strategies based on page count (≤5: full text, >50: metadata + ToC only). Use docling (PowerPoint) or pdftotext (Word). Skip low-priority materials.
 
-**PDF Prioritization System**:
-- Scoring criteria: relevance to summary, importance, document type, chronological position
-- Filename pattern recognition (e.g., `shiryou1.pdf` > `sankou*.pdf`)
-- Cross-reference with meeting minutes for mention frequency
-- Adjustment rules: prevent agenda from getting max score (5) when substantial materials exist; cap reference materials at score 4
+**PDF Prioritization:** Score PDFs 1-5 by relevance, importance, document type. Filename pattern recognition (`shiryou1.pdf` > `sankou*.pdf`). Cross-reference with meeting minutes.
 
-**Document Type Detection**:
-- Read first 1-10 pages to determine type
-- PowerPoint vs Word distinction: look for bullet points, slide titles, nominal phrases
-- Enables type-specific processing strategies
-
-**Abstract Structure** (論文形式):
-1. Background/Context (2-3 sentences) - **Must include meeting name and round number**
+**Abstract Structure (論文形式, 1,000 chars max):**
+1. Background/Context (2-3 sentences) - Must include meeting name and round number
 2. Purpose (1-2 sentences)
 3. Discussion Content (3-5 sentences)
 4. Decisions/Agreements (3-5 sentences)
 5. Future Direction (2-3 sentences)
-- Single paragraph, 1,000 characters max, factual only (no speculation)
-- **URL must be included on a new line immediately after the abstract paragraph**
+- Single paragraph, factual only, URL on new line after paragraph
 
-## Common Operations
+## Usage
 
-### Running the Skill
-
+**Run skill with URL:**
 ```bash
-# Invoke with URL (HTML page or PDF)
-/pagereport-cas "https://www.cas.go.jp/jp/seisaku/nipponseichosenryaku/kaigi/dai2/gijisidai.html"
+/pagereport-cas "https://www.cas.go.jp/..."
 /pagereport-cao "https://www.cao.go.jp/..."
 /pagereport-meti "https://www.meti.go.jp/..."
 /pagereport-chusho "https://www.chusho.meti.go.jp/..."
 /pagereport-mhlw "https://www.mhlw.go.jp/..."
 /pagereport-fsa "https://www.fsa.go.jp/..."
+/pagereport-digital "https://www.digital.go.jp/..."
 ```
 
-The skill automatically:
-- Extracts meeting name from HTML title/h1 or PDF metadata
-- Converts dates from Japanese calendar (令和X年Y月Z日) to YYYYMMDD format
-- Detects round number (第X回)
-- Creates `./output` directory if it doesn't exist
-- Downloads priority PDFs to `/tmp/` using curl
-- Generates unified report file in `./output/`
-- Posts the abstract to Bluesky using `ssky post` (if logged in)
+Automatically extracts metadata, downloads PDFs to `./tmp/`, generates report in `./output/`, posts to Bluesky (if logged in).
 
-### Posting to Bluesky Manually
-
-If you want to post an existing report to Bluesky:
-
+**Manual Bluesky posting:**
 ```bash
-# Use the bluesky-post command
 /bluesky-post "output/日本成長戦略会議_第2回_20251224_report.md"
-```
-
-This is useful when:
-- You skipped Bluesky posting during initial generation (not logged in)
-- You want to re-post a report
-- You generated a report before Bluesky integration was added
-
-### Manual Testing Commands
-
-```bash
-# Test PDF download
-curl -o /tmp/test.pdf "https://example.com/document.pdf"
-
-# Check output directory
-ls -la output/
-
-# Verify file creation
-cat "output/{meeting_name}_{round}_{date}_report.md"
-
-# Test Bluesky login status
-ssky profile myself
-
-# Test abstract extraction
-awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "output/{meeting_name}_{round}_{date}_report.md"
-
-# Test Bluesky posting (dry run)
-awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} else if(flag==2){flag=0}} flag==2' "output/{meeting_name}_{round}_{date}_report.md" | ssky post -d
 ```
 
 ## Important Implementation Notes
 
 ### Error Handling
 
-1. **Subagent unavailable**: Terminate processing with clear error message
-   - Check subagent SKILL.md has YAML frontmatter (name, description, allowed-tools)
-   - Verify subagent is registered in Claude Code's skill list
-   - User should fix configuration and restart session
-2. **HTML fetch failure**: Retry with normalization, log each stage
-3. **PDF download failure**: Log curl error, skip file, note "download failed" in detail.md
-4. **PDF read failure**: Log Read tool error, mark as "unreadable" in output
-5. **Missing metadata**: Prompt user for meeting name, date, or round number
-6. **Bluesky posting failure**: Log warning, skip posting, report generation continues normally
+- **Subagent unavailable**: Terminate with error. Check YAML frontmatter and permissions in `.claude/settings.local.json`
+- **HTML fetch failure**: Retry with normalization, log each stage
+- **PDF download/read failure**: Log error, skip file, mark as "failed" or "unreadable"
+- **Missing metadata**: Prompt user for meeting name, date, or round number
+- **Bluesky posting failure**: Log warning, continue (non-critical)
 
 ### Content Cleaning (HTML)
 
@@ -218,340 +170,18 @@ awk '/## アブストラクト/{flag=1; next} /```/{if(flag==1){flag=2; next} el
 ### PDF Processing Rules
 
 **PDF Acquisition:**
-- **Remote PDFs**: Download with curl to `/tmp/` first (sequential downloads only)
-- **Local PDFs**: Read directly with Read tool
-
-**Document Type-Based PDF Processing (Token Optimization):**
-
-Process PDFs differently based on document type (determined in Step 3: Document Type Detection):
-
-**Strategy Overview:**
-- **PowerPoint-origin PDFs** → Use docling (structure preservation critical)
-- **Word-origin PDFs** → Use pdftotext (fast linear text extraction)
-- **Other PDFs** → Use pdftotext or Read tool based on size
-
-### Method 1: pdftotext for Word-origin PDFs (Fast)
-
-Word-origin PDFs have linear text structure, so pdftotext provides fast, efficient extraction:
-
-```bash
-# Check if pdftotext is available
-which pdftotext  # Should output: /usr/bin/pdftotext
-
-# Extract text from PDF
-pdftotext /tmp/document.pdf /tmp/document.txt
-
-# Check the output
-wc -l /tmp/document.txt  # Count lines
-
-# Read with Read tool
-# The text file can then be processed in Step 7
-```
-
-**Advantages:**
-- Very fast (seconds vs minutes for docling)
-- No Docker dependency
-- Clean text output
-- Works well for linear documents (Word-origin PDFs, reports, papers)
-
-**Limitations:**
-- No layout preservation (but Word PDFs are linear anyway)
-- Headers/footers may be included (can be filtered)
-- No structure detection (headings must be identified by content analysis)
-
-### Method 2: docling for PowerPoint-origin PDFs (Structure Preservation)
-
-PowerPoint PDFs require structure preservation (slides, bullets, layout), so use docling:
-
-```bash
-# Start docling-serve container (one-time setup)
-docker run -d -p 5001:5001 --name docling-server quay.io/docling-project/docling-serve
-```
-
-**Synchronous Conversion (Small PDFs only):**
-
-**IMPORTANT**: Synchronous processing has a 120-second timeout limit (DOCLING_SERVE_MAX_SYNC_WAIT). Only use for small PDFs (<10 pages estimated). For medium to large PDFs, use asynchronous processing.
-
-```bash
-# Convert PDF to Markdown (synchronous - times out for large PDFs)
-curl -s -X POST http://localhost:5001/v1/convert/file \
-  -F "files=@/tmp/document.pdf" \
-  > /tmp/document_result.json
-
-# Extract Markdown from JSON response (synchronous response structure)
-cat /tmp/document_result.json | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['md_content'])" \
-  > /tmp/document.md
-```
-
-**Asynchronous Conversion (Recommended for >10 pages):**
-
-For medium to large PDFs, use asynchronous processing to avoid timeout:
-
-```bash
-# 1. Submit conversion task
-TASK_ID=$(curl -s -X POST http://localhost:5001/v1/convert/file/async \
-  -F "files=@/tmp/document.pdf" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
-
-# 2. Poll for completion (check every 10-30 seconds)
-while true; do
-  STATUS=$(curl -s "http://localhost:5001/v1/status/poll/$TASK_ID" | \
-    python3 -c "import json, sys; print(json.load(sys.stdin)['task_status'])")
-  echo "Status: $STATUS"
-  if [ "$STATUS" = "success" ]; then
-    break
-  fi
-  sleep 15
-done
-
-# 3. Retrieve result (asynchronous response structure)
-curl -s "http://localhost:5001/v1/result/$TASK_ID" | \
-  python3 -c "import json, sys; print(json.load(sys.stdin)['document']['md_content'])" \
-  > /tmp/document.md
-```
-
-**Processing Multiple PDFs Efficiently:**
-
-Submit multiple conversions in parallel for efficiency:
-
-```bash
-# Submit all PDFs asynchronously
-TASK_ID_1=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "files=@/tmp/doc1.pdf" | python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
-TASK_ID_2=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "files=@/tmp/doc2.pdf" | python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
-TASK_ID_3=$(curl -s -X POST http://localhost:5001/v1/convert/file/async -F "files=@/tmp/doc3.pdf" | python3 -c "import json, sys; print(json.load(sys.stdin)['task_id'])")
-
-# Poll and retrieve results for each task
-# (Repeat polling pattern above for each TASK_ID)
-```
-
-**After Conversion:**
-
-```bash
-# Read the Markdown with Read tool
-# If Markdown file is too large (>256KB due to embedded images), use Grep to extract structure:
-grep "^#{1,3}\s+" /tmp/document.md  # Extract headings to understand structure
-```
-
-**Image Extraction and Removal (Critical for Large Files):**
-
-**Problem:** docling embeds images as base64-encoded data URLs in Markdown, causing file sizes to exceed 256KB and breaking subsequent processing.
-
-**Solution:** Extract images to separate files immediately after conversion and remove them from Markdown.
-
-```bash
-# 1. Extract base64 images and remove from Markdown
-python3 << 'EOF'
-import re
-import base64
-import os
-import sys
-
-# Input/output paths
-md_file = '/tmp/document.md'
-output_md_file = '/tmp/document.md'
-
-# Create images directory based on PDF filename
-pdf_basename = os.path.basename('/tmp/document.pdf').replace('.pdf', '')
-images_dir = f'/tmp/{pdf_basename}_images'
-os.makedirs(images_dir, exist_ok=True)
-
-# Read Markdown content
-with open(md_file, 'r', encoding='utf-8') as f:
-    content = f.read()
-
-# Pattern to match base64-encoded images in Markdown
-# Matches: ![alt](data:image/png;base64,iVBORw0KG...)
-image_pattern = r'!\[([^\]]*)\]\(data:image/([^;]+);base64,([^)]+)\)'
-
-image_count = 0
-page_num = 1
-
-def extract_image(match):
-    global image_count, page_num
-
-    alt_text = match.group(1)
-    image_format = match.group(2)  # png, jpeg, etc.
-    base64_data = match.group(3)
-
-    # Determine page number from preceding content
-    # This is a simple heuristic - adjust based on actual docling output format
-    preceding_text = content[:match.start()]
-    page_markers = re.findall(r'##\s*Page\s*(\d+)', preceding_text, re.IGNORECASE)
-    if page_markers:
-        page_num = int(page_markers[-1])
-
-    # Generate filename
-    image_count += 1
-    filename = f'page_{page_num:03d}_image_{image_count:03d}.{image_format}'
-    filepath = os.path.join(images_dir, filename)
-
-    # Decode and save image
-    try:
-        image_data = base64.b64decode(base64_data)
-        with open(filepath, 'wb') as img_file:
-            img_file.write(image_data)
-        print(f'Extracted: {filename} ({len(image_data)} bytes)', file=sys.stderr)
-
-        # Return empty string to remove image from Markdown
-        # Future enhancement: could return file path reference
-        return ''
-    except Exception as e:
-        print(f'Error extracting image: {e}', file=sys.stderr)
-        return match.group(0)  # Keep original if extraction fails
-
-# Replace all base64 images with extracted file references (or empty string)
-cleaned_content = re.sub(image_pattern, extract_image, content)
-
-# Write cleaned Markdown
-with open(output_md_file, 'w', encoding='utf-8') as f:
-    f.write(cleaned_content)
-
-print(f'Total images extracted: {image_count}', file=sys.stderr)
-print(f'Images saved to: {images_dir}', file=sys.stderr)
-print(f'Cleaned Markdown written to: {output_md_file}', file=sys.stderr)
-EOF
-
-# 2. Verify the cleaned Markdown file size
-ls -lh /tmp/document.md
-echo "Images directory:"
-ls -lh /tmp/document_images/ 2>/dev/null || echo "No images extracted"
-
-# 3. Now the Markdown file is safe to read with Read tool
-# Images are preserved in /tmp/document_images/ for future use
-```
-
-**Processing for Multiple PDFs:**
-
-For each PDF converted with docling:
-
-```bash
-# Example with multiple files
-for pdf_file in /tmp/shiryou1.pdf /tmp/shiryou2.pdf /tmp/shiryou3.pdf; do
-  basename=$(basename "$pdf_file" .pdf)
-  md_file="/tmp/${basename}.md"
-
-  # Run image extraction script for each Markdown file
-  # (Adjust the script above to use variables)
-  python3 /path/to/extract_images.py "$md_file"
-done
-```
-
-**Image Directory Structure:**
-
-```
-/tmp/
-├── shiryou1.pdf
-├── shiryou1.md (cleaned, no images)
-├── shiryou1_images/
-│   ├── page_001_image_001.png
-│   ├── page_001_image_002.png
-│   ├── page_003_image_003.png
-│   └── ...
-├── shiryou2.pdf
-├── shiryou2.md (cleaned, no images)
-└── shiryou2_images/
-    ├── page_001_image_001.png
-    └── ...
-```
-
-**Future Enhancement Notes:**
-
-- Images are preserved in `/tmp/{pdf_basename}_images/` for potential future use
-- Could implement image analysis/captioning in future versions
-- Could include image references as Markdown links: `![Image](path/to/image.png)`
-- Currently images are removed entirely to optimize token usage
-
-**Usage Decision Criteria (Document Type Based):**
-
-*PowerPoint-origin PDFs → Use docling:*
-- Slide structure preservation is critical (bullet points, slide titles, layout)
-- Use asynchronous processing for medium to large files (>10 pages)
-- Use synchronous processing only for small files (<10 pages)
-- Note: If synchronous times out, automatically retry with asynchronous
-- Complex tables/layouts benefit from structured Markdown
-- Scanned PDFs requiring OCR
-
-*Word-origin PDFs → Use pdftotext:*
-- Linear text structure allows fast, simple extraction
-- No need for layout preservation (sequential reading is sufficient)
-- Much faster than docling (seconds vs minutes)
-- Outputs plain text, which can be processed with simple tools
-- **Command**: `pdftotext /tmp/document.pdf /tmp/document.txt`
-
-*Other PDFs (Agendas, Rosters, Surveys) → Size-based decision:*
-- Small (<20 pages): Read tool directly
-- Medium (20-50 pages): pdftotext preferred
-- Large (>50 pages): pdftotext + partial reading with offset/limit
-
-*Fallback to Read tool directly when:*
-- pdftotext not available in environment
-- Docker unavailable (for docling)
-- Conversion fails entirely
-- Very small PDFs (≤5 pages) where conversion overhead isn't worth it
-
-**Processing Time Guidelines:**
-
-*PowerPoint PDFs (docling):*
-- Small PDFs (<10 pages): 1-2 minutes (synchronous or asynchronous)
-- Medium PDFs (10-30 pages): 3-5 minutes (asynchronous recommended)
-- Large PDFs (30-50 pages): 5-8 minutes (asynchronous required)
-- Multiple PDFs in parallel: Time of longest PDF + 1-2 minutes overhead
-
-*Word PDFs (pdftotext):*
-- Small PDFs (<10 pages): 5-10 seconds
-- Medium PDFs (10-30 pages): 10-30 seconds
-- Large PDFs (30-50 pages): 30-60 seconds
-- Very large PDFs (>100 pages): 1-2 minutes
-- **Much faster than docling** (10-50x speedup)
+- Remote PDFs: Download to `./tmp/` sequentially (no parallel downloads)
+- Local PDFs: Read directly with Read tool
+
+**Document Type-Based Processing (Step 6):**
+- **PowerPoint PDFs** → docling conversion (`docling_convert_async.sh`, `docling_poll_status.sh`, `docling_get_result.sh`)
+  - After conversion: Run `extract_images_from_md.sh` to remove base64 images
+- **Word PDFs** → pdftotext conversion (`convert_pdftotext.sh`, fallback: `convert_pdftotext_fallback.sh`)
+- **Other PDFs** → Size-based: <20 pages (Read tool), 20-50 pages (pdftotext), >50 pages (pdftotext + offset/limit)
 
 **Error Handling:**
-
-0. **pdftotext not available:**
-   - Check with: `which pdftotext` or `command -v pdftotext`
-   - Install if needed: `apt-get install poppler-utils` (Debian/Ubuntu)
-   - Fallback: Use Read tool to read PDF directly
-
-1. **Docling container not running:**
-   - Check with: `docker ps | grep docling`
-   - Start if needed: `docker start docling-server` (or run the initial docker run command)
-
-2. **Synchronous conversion timeout ("Conversion is taking too long"):**
-   - Automatically retry with asynchronous conversion
-   - This is expected for PDFs >10 pages
-
-3. **JSON response structure differences:**
-   - Synchronous: `data['md_content']` (top-level key)
-   - Asynchronous: `data['document']['md_content']` (nested key)
-   - Always check for both structures when parsing
-
-4. **Markdown file too large (>256KB) for Read tool:**
-   - **Root cause**: base64-encoded images embedded by docling
-   - **Solution**: Run image extraction script immediately after conversion (see "Image Extraction and Removal" section)
-   - This extracts images to separate files and removes them from Markdown
-   - After extraction, Markdown file size should be manageable (<100KB typically)
-   - If extraction fails, fallback to Grep: `grep "^#{1,3}\s+" file.md` to extract headings
-
-5. **Image extraction failures:**
-   - **Invalid base64 data**: Skip the problematic image, keep processing others
-   - **Write permission denied**: Check `/tmp/` directory permissions
-   - **Disk space full**: Free up space in `/tmp/` or use alternative location
-   - **No images found**: Not an error - some PDFs have no embedded images
-   - Extraction failures are non-critical; processing continues with original Markdown
-
-6. **Conversion fails entirely:**
-   - Fall back to Read tool for direct PDF reading
-   - Log conversion errors for debugging
-   - Note in output that Markdown conversion was not available
-
-7. **Task status stuck in "pending" or "started":**
-   - Continue polling for up to 10 minutes
-   - If still stuck, check docling container logs: `docker logs docling-server`
-   - Consider restarting container if necessary
-
-**Other Rules:**
-- **Empty content detection**: Skip if only cover page, images without captions, or data tables without context
-- **Parallel downloads**: Avoid; use sequential downloads to prevent rate limiting
+- Tool unavailable: Check with `check_tool.sh`, fallback to Read tool
+- Conversion fails: Fall back to Read tool for direct PDF reading
 
 ### Quality Requirements
 
@@ -562,298 +192,51 @@ done
 
 ## File Organization
 
-### Project Structure
+**Key Directories:**
+- `.claude/agents/`: 11 subagents (one per processing step)
+- `.claude/skills/`: pagereport-* (6 agencies), bluesky-post, github-workflow
+- `.claude/skills/common/`: base_workflow.md (orchestrator), scripts/ (shell scripts)
+- `.claude/docs/`: subagent-conventions.md
+- `.claude/settings.local.json`: Tool permissions
+- `output/`: Generated report files
 
-```
-.
-├── .claude/
-│   ├── agents/
-│   │   ├── page-type-detector.md       # Subagent for Step 2.5 (page type detection)
-│   │   ├── document-type-classifier.md # Subagent for Step 6 (document type detection, parallel)
-│   │   └── material-analyzer.md        # Subagent for Step 8 (material analysis, parallel)
-│   ├── skills/
-│   │   ├── pagereport-cas/             # Internal Cabinet Office skill
-│   │   │   └── SKILL.md
-│   │   ├── pagereport-cao/             # Cabinet Office skill
-│   │   │   └── SKILL.md
-│   │   ├── pagereport-meti/            # METI skill
-│   │   │   └── SKILL.md
-│   │   ├── pagereport-chusho/          # Small and Medium Enterprise Agency skill
-│   │   │   └── SKILL.md
-│   │   ├── pagereport-mhlw/            # Ministry of Health, Labour and Welfare skill
-│   │   │   └── SKILL.md
-│   │   ├── pagereport-fsa/             # Financial Services Agency skill
-│   │   │   └── SKILL.md
-│   │   ├── bluesky-post/               # Bluesky posting skill (auto-execute: true)
-│   │   │   ├── SKILL.md                # Invokable as /bluesky-post command
-│   │   │   └── post.sh                 # Shell script for abstract extraction and posting
-│   │   └── common/
-│   │       ├── base_workflow.md        # Shared workflow (11 steps)
-│   │       └── scripts/                # Pre-authorized shell scripts (10 files)
-│   │           ├── download_pdf.sh
-│   │           ├── download_pdf_with_useragent.sh
-│   │           ├── convert_pdftotext.sh
-│   │           ├── convert_pdftotext_fallback.sh
-│   │           ├── docling_convert_async.sh
-│   │           ├── docling_poll_status.sh
-│   │           ├── docling_get_result.sh
-│   │           ├── extract_images_from_md.sh
-│   │           ├── extract_important_pages.sh
-│   │           └── check_tool.sh
-│   └── settings.local.json             # Tool permissions
-├── output/
-│   └── {meeting_name}_{round}_{date}_report.md
-└── CLAUDE.md                           # This file
-```
+**Output Format:** `{meeting_name}_第{N}回_{YYYYMMDD}_report.md`
 
-### Output Files
-
-```
-output/
-└── {meeting_name}_第{N}回_{YYYYMMDD}_report.md
-```
-
-Example:
-```
-output/
-└── 日本成長戦略会議_第2回_20251224_report.md
-```
-
-**Report File Structure:**
-- Header with meeting metadata (name, date, location)
-- **Abstract section** (enclosed in code fences for easy extraction by `/bluesky-post`)
-- Material list
-- Detailed information sections
-- Summary and reference links
+Example: `日本成長戦略会議_第2回_20251224_report.md`
 
 ## Modification Guidelines
 
-### When Editing Workflow (`.claude/skills/common/base_workflow.md`)
+**Editing Workflow:** Maintain 11-step structure. Keep abstract structure strict (5 elements, 1,000 chars). Test with actual government meeting pages.
 
-- Maintain the 11-step structure for clarity
-- Update token optimization strategies if processing different document types
-- Adjust PDF scoring criteria based on observed relevance patterns
-- Keep abstract structure strict (5 elements, 1 paragraph, 1,000 chars)
-- Test with actual government meeting pages to validate changes
-- Ensure all PDF URLs are converted to absolute paths
+**Adding New Skills:** Create `.claude/skills/<skill-name>/SKILL.md`. Reference `../common/base_workflow.md`. Update `.claude/settings.local.json` for permissions.
 
-### When Adding New Skills
+**Commits/PRs:** Reference `.claude/skills/github-workflow/SKILL.md`. Use Conventional Commits format. No "Generated with Claude Code" footers. Never commit directly to main.
 
-- Create new skill file in `.claude/skills/<skill-name>/SKILL.md`
-- Reference the common workflow: `../common/base_workflow.md`
-- Add domain-specific customizations as needed
-- Update `.claude/settings.local.json` for domain permissions
-- Document in CLAUDE.md
+## Troubleshooting
 
-## GitHub Workflow Rules
+**Subagent Not Found:** Check `.claude/agents/{name}.md` has YAML frontmatter. Verify permission in `.claude/settings.local.json`: `"Task(subagent_type:{name})"`
 
-### Branch Strategy
+**JSON Parsing Error:** Ensure subagent outputs ONLY valid JSON (no explanatory text).
 
-**Main Branch Protection**:
-- `main` branch contains stable, tested code
-- Never commit directly to `main`
-- All changes go through feature branches and pull requests
+**Token Overflow:** Process materials in batches (max 3 parallel). Use Read tool with limit/offset for large files.
 
-**Branch Naming Convention**:
-```
-feature/<description>  # New features (e.g., feature/pdf-caching)
-fix/<description>      # Bug fixes (e.g., fix/date-parsing-error)
-docs/<description>     # Documentation updates (e.g., docs/update-readme)
-refactor/<description> # Code refactoring (e.g., refactor/pdf-scoring)
-```
+**Docling Container Issues:** Check `docker ps | grep docling`. Fix: `docker start docling-server`
 
-**Branch Lifecycle**:
-1. Create branch from latest `main`: `git checkout -b feature/my-feature`
-2. Make commits following commit message rules
-3. Create pull request when ready
-4. Merge to `main` after self-review
-5. Delete feature branch after merge
-
-### Commit Message Rules
-
-Follow **Conventional Commits** format for clear history and potential automation:
-
-```
-<type>: <subject>
-
-[optional body]
-```
-
-**Format Requirements**:
-- Subject line: Use imperative mood ("add" not "added" or "adds")
-- Subject line: No period at the end
-- Subject line: Keep under 72 characters
-- Write in English
-- Body text is optional but allowed for detailed explanations
-
-**DO NOT Include**:
-- "Generated with Claude Code" footer
-- "Co-Authored-By: Claude" footer
-- Emoji or decorative elements
-
-**Types**:
-- `feat`: New feature (e.g., `feat: add PDF caching mechanism`)
-- `fix`: Bug fix (e.g., `fix: correct date parsing for Reiwa era dates`)
-- `docs`: Documentation only (e.g., `docs: update CLAUDE.md with workflow rules`)
-- `refactor`: Code refactoring without behavior change (e.g., `refactor: extract PDF scoring logic`)
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks (e.g., `chore: update dependencies`)
-- `perf`: Performance improvements
-
-**Examples**:
-```bash
-feat: add PDF download caching to improve performance
-
-fix: correct Reiwa era date conversion in metadata extraction
-
-docs: add GitHub workflow section to CLAUDE.md
-
-refactor: extract document type detection into separate function
-```
-
-### Pull Request Guidelines
-
-Even for individual development, PRs provide valuable benefits:
-- Self-review opportunity before merging
-- Clear history of what changed and why
-- Documentation for future reference
-
-**PR Creation Checklist**:
-1. **Title**: Use same format as commit messages (type: description)
-2. **Description**: Include:
-   - What changed and why
-   - Related issue numbers (if applicable)
-   - Testing performed
-   - Any breaking changes or migration notes
-3. **Self-Review**: Review all changed files before merging
-4. **Status Check**: Ensure all tests pass (if CI is configured)
-
-**PR Template** (optional, create `.github/pull_request_template.md`):
-```markdown
-## Changes
-
-<!-- What was changed -->
-
-## Motivation
-
-<!-- Why this change is needed -->
-
-## Testing
-
-<!-- How this was tested -->
-- [ ] Manual testing completed
-- [ ] Impact on existing features verified
-
-## Notes
-
-<!-- Any additional notes or considerations -->
-```
-
-**Merge Strategy**:
-- **Squash and merge**: Recommended for feature branches with many small commits
-- **Merge commit**: For significant features where commit history is valuable
-- **Rebase and merge**: For clean linear history (requires force-push awareness)
-
-### Claude Code Integration
-
-When working with Claude Code:
-- Claude will follow these rules when creating commits or PRs
-- When asked to commit changes, Claude will generate properly formatted commit messages
-- Claude will NOT add "Generated with Claude Code" or "Co-Authored-By" footers
-- Review Claude's proposed changes before approving commits/PRs
+**Script Execution Failure:** `chmod +x .claude/skills/common/scripts/**/*.{sh,py}`
 
 ## Bluesky Integration
 
-### Overview
+**Automatic Posting (Step 11):**
+- Extracts abstract from generated report file
+- Posts to Bluesky using `ssky post`
+- Handles long content by automatic thread splitting
+- Gracefully skips if not logged in or if posting fails
 
-The pagereport skills automatically post generated abstracts to Bluesky after completing the report. This enables real-time sharing of government meeting summaries with a wider audience.
-
-A standalone `/bluesky-post` command is also available for manually posting existing reports.
-
-### Setup
-
-**Prerequisites:**
-- Install ssky: `pip install ssky`
-- Login to Bluesky: `ssky login`
-- Enter your Bluesky handle and app password when prompted
-
-**Verification:**
+**Manual Posting:**
 ```bash
-# Check if ssky is installed
-which ssky
-
-# Verify login status
-ssky profile myself
-
-# Should display your profile information
-```
-
-### How It Works
-
-**Automatic Posting (Step 11 in pagereport workflow):**
-1. After generating report.md, automatically invokes the bluesky-post command
-2. Extracts the abstract from the generated report file
-3. Posts the abstract (including URL) to Bluesky using `ssky post`
-4. Handles long content by automatic thread splitting
-5. Gracefully skips if not logged in or if posting fails
-
-**Manual Posting (`/bluesky-post` skill):**
-- Defined in `.claude/skills/bluesky-post/SKILL.md` with implementation in `post.sh`
-- Can be invoked independently: `/bluesky-post <report_file_path>`
-- Useful for posting existing reports or re-posting
-
-**What gets posted:**
-- The complete abstract (論文形式, 1,000 characters)
-- Original meeting page URL
-- Automatically split into thread if exceeds Bluesky's character limit
-
-### Error Handling
-
-The Bluesky posting step is **non-critical** and will not block report generation:
-
-1. **ssky not installed**: Warning message, posting skipped
-2. **Not logged in**: Warning message with login instructions, posting skipped
-3. **Posting fails**: Warning message, report saved successfully
-
-In all cases, the report file is generated successfully in `./output/` regardless of posting status.
-
-### Manual Posting
-
-If automatic posting is skipped, you can use the `/bluesky-post` command:
-
-```bash
-# Use the command (recommended)
 /bluesky-post "output/日本成長戦略会議_第2回_20251224_report.md"
-
-# Or extract and post manually with bash (3-step method for reliability)
-REPORT_FILE="output/{meeting_name}_{round}_{date}_report.md"
-
-# Step 1: Extract abstract to temp file
-awk '/## アブストラクト/{found=1; next} \
-     found && /^```$/{count++; next} \
-     found && count==1 && /^## /{exit} \
-     found && count==1{print}' "$REPORT_FILE" > /tmp/abstract.txt
-
-# Step 2: Add URL to create complete post
-cat /tmp/abstract.txt > /tmp/post.txt
-grep -oP 'https?://[^\s]+' "$REPORT_FILE" | head -n 1 >> /tmp/post.txt
-
-# Step 3: Post to Bluesky
-cat /tmp/post.txt | ssky post
-
-# Dry run to preview before posting
-cat /tmp/post.txt | ssky post -d
 ```
 
-### Disabling Bluesky Posting
-
-To disable Bluesky posting entirely:
-1. Logout from ssky: The skill will automatically skip posting if not logged in
-2. Or modify the base_workflow.md to comment out Step 11
-
-### Character Limit Handling
-
-Bluesky has a 300 grapheme limit per post. The ssky tool automatically handles this:
-- Long abstracts (1,000 characters) are automatically split into thread posts
-- Each post in the thread maintains context
-- URL is included in the final post of the thread
+**Error Handling:**
+- The Bluesky posting step is **non-critical** and will not block report generation
+- If ssky not installed, not logged in, or posting fails: Warning message, report saved successfully
